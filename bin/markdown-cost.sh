@@ -169,6 +169,22 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
         exit 1
       fi
     fi
+    # SEEDING BEFORE `git add` IS THE RECURRING TRAP, and it is silent.
+    # census() is `git ls-files`, so a prose file that is written but not yet
+    # STAGED is not counted -- the baseline lands too low and the very next
+    # --census fails on the commit that seeded it. It has bitten four separate
+    # ports; hf7y/ecosim#73 diagnosed it after the third. A warning is cheap
+    # and the alternative is remembering, which has not worked.
+    untracked="$(git ls-files --others --exclude-standard -z 2>/dev/null \
+      | { n=0; while IFS= read -r -d '' u; do
+            prose_excluded "$u" && continue
+            [ -n "$(prose_lang "$u")" ] && n=$((n+1))
+          done; printf '%s' "$n"; })"
+    if [ "${untracked:-0}" -gt 0 ]; then
+      printf 'markdown-cost --accept -- WARNING: %s prose file(s) are UNTRACKED and\n' "$untracked" >&2
+      printf '  therefore NOT in this baseline. census() reads `git ls-files`. Stage them\n' >&2
+      printf '  and re-run --accept, or the next --census fails on this very commit.\n' >&2
+    fi
     printf '# markdown-cost.ratchet -- prose lines in this tree. SHRINKS ONLY.\n# Written by markdown-cost.sh --accept, which refuses to raise it. A hand\n# edit that raises it is rejected by --census. See bin/markdown-cost.sh.\n# accepted %s\n%s\n' \
       "$(date -Is)" "$now" > "$RATCHET" || die2 "cannot write $RATCHET"
     printf 'markdown-cost --accept -- baseline is now %s prose line(s).\n' "$now"
