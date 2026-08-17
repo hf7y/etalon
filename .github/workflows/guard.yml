@@ -1,0 +1,89 @@
+# guard.yml -- the prose guard, called by every repo in the estate.
+#
+# THIS FILE IS THE ONE COPY. A calling repo carries six lines and no script:
+#
+#   name: prose
+#   on: [pull_request]
+#   jobs:
+#     prose:
+#       uses: hf7y/etalon/.github/workflows/guard.yml@main
+#
+# Changing the guard changes it everywhere, at once, with no port step and no
+# vendored copy. BUILD-DISCIPLINE.md records eleven byte-identical CORRUPTED
+# copies of exactly this guard, produced by hand-copying it into repo after
+# repo; that is the failure this arrangement removes rather than manages.
+#
+# WHY A PUBLIC REPO. A reusable workflow's FILE travels to the caller, but the
+# repo holding it is never checked out -- so the guard script had to be
+# fetchable, and `GITHUB_TOKEN` is scoped to the CALLING repo only. The
+# alternative was distributing a cross-repo credential to fifteen repos, which
+# is the credential sprawl hf7y/realisateur#171 exists to reduce. etalon is
+# public and holds a lint, its tests and an exit vocabulary -- no host layout,
+# no account names, no paths.
+name: prose
+
+on:
+  workflow_call:
+    inputs:
+      ratchet:
+        description: >-
+          Path, relative to the calling repo, of that repo's prose ratchet.
+          Per-repo BASELINE, per-estate GUARD: the number is local, the
+          measurement is not.
+        required: false
+        default: .prose-ratchet
+        type: string
+      ref:
+        description: which etalon ref to measure with. Pin it to freeze a repo.
+        required: false
+        default: main
+        type: string
+
+jobs:
+  prose:
+    runs-on: ubuntu-latest
+    steps:
+      # The CALLER's tree. In a reusable workflow this is the default
+      # checkout -- the repo whose pull request triggered the run.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # etalon itself, for the script. Public, so no credential.
+      - uses: actions/checkout@v4
+        with:
+          repository: hf7y/etalon
+          ref: ${{ inputs.ref }}
+          path: .etalon
+
+      # The default range is $(git merge-base HEAD origin/main)..HEAD, so
+      # origin/main must exist as a remote-tracking ref. actions/checkout
+      # fetches the PR refs; main is not guaranteed among them even at depth 0.
+      - name: Make origin/main resolvable
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+
+      - name: Seed the ratchet if this repo has none
+        run: |
+          if [ ! -f "${{ inputs.ratchet }}" ]; then
+            echo "::notice::no ${{ inputs.ratchet }} -- seeding from this tree."
+            echo "A first run has nothing to compare against. Commit the file"
+            echo "printed below so the next run has a floor."
+            MARKDOWN_COST_RATCHET="$PWD/${{ inputs.ratchet }}" \
+              bash .etalon/bin/markdown-cost.sh --accept
+            cat "${{ inputs.ratchet }}"
+          fi
+
+      - name: Price the prose in this diff
+        run: |
+          MARKDOWN_COST_RATCHET="$PWD/${{ inputs.ratchet }}" \
+            bash .etalon/bin/markdown-cost.sh
+
+      # BOTH STEPS, OR THE RATCHET IS A FILE NOTHING READS. The step above
+      # prices what this PR adds; this one holds the TREE against the ratchet,
+      # which only ever falls. Shipping a ratchet without this is
+      # build-but-don't-wire with the guard as the thing not wired -- found by
+      # hf7y/ecosim reviewing its own port (hf7y/ecosim#73).
+      - name: Prose ratchet -- the tree may not grow
+        run: |
+          MARKDOWN_COST_RATCHET="$PWD/${{ inputs.ratchet }}" \
+            bash .etalon/bin/markdown-cost.sh --census
