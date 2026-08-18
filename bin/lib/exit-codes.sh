@@ -15,6 +15,15 @@
 # Zach, 2026-08-17: "Anything that requires 21 scripts to change should not; it
 # should be changeable in one place. That is an obvious drift liability."
 #
+# THE NUMBERS ARE THE VERB LADDER's, decided by Zach 2026-08-18
+# (hf7y/realisateur#334): "we decided a 6 or 7 level convention at some point
+# for the verbs etc." This file first shipped BLIND=3 and REFUSED=4, which
+# COLLIDED with bashify/skel/lib/verb.sh -- where 3 is NEEDS-SUMMON and 4 is
+# GAP -- so a caller switching on a code could not tell which vocabulary it
+# was reading. Nineteen bashified verbs already speak the verb ladder through
+# verb_blind/verb_refuse, and ecosim's `sonde` extends it upward with 8 WARN
+# and 9 CRIT. The verbs were right; this file moved.
+#
 # So the NUMBER lives here and nowhere else. A script says `exit "$EXIT_BLIND"`,
 # and changing what BLIND means is one edit in this file.
 #
@@ -36,21 +45,46 @@
 : "${EXIT_OK:=0}"
 
 # 1 -- the guard looked and FOUND something. A real finding, reported.
+#      Verbs have no equivalent: a verb keeps its promise or does not.
 : "${EXIT_FINDING:=1}"
 
 # 2 -- the CALLER is wrong: unknown flag, missing argument, bad value.
 #      Distinct from a finding, because nothing was measured.
 : "${EXIT_USAGE:=2}"
 
-# 3 -- BLIND. The guard could not perform its measurement: no repository, an
+# 3 -- NEEDS-SUMMON. Contracted here, no mechanism behind it yet, and no
+#      spend was authorised. A FINDING, not an error: the tool prints the
+#      summon it would have made and costs nothing.
+: "${EXIT_NEEDS_SUMMON:=3}"
+
+# 4 -- GAP. SHOULD DO: in scope, not built yet. A TEMPORAL claim, and an
+#      invitation -- summon, or do it by hand and mechanize it. GAPS.md is
+#      its sink and those entries are meant to DRAIN.
+: "${EXIT_GAP:=4}"
+
+# 5 -- BROKEN. It ran and produced a wrong or partial answer. The tool
+#      exists; it failed.
+: "${EXIT_BROKEN:=5}"
+
+# 6 -- BLIND. The guard could not perform its measurement: no repository, an
 #      unreadable range, an unreachable API, a registry that is not present.
 #      NEVER report this as clean. It is the whole reason this file exists.
-: "${EXIT_BLIND:=3}"
+: "${EXIT_BLIND:=6}"
 
-# 4 -- REFUSED. The guard could look, and declines to act on principle rather
-#      than on a finding. A refusal is permanent; a BLIND is a condition that
-#      may clear. Keeping them apart is what stops a "will not" being filed as
-#      a "not yet" (hf7y/realisateur#373).
-: "${EXIT_REFUSED:=4}"
+# 7 -- REFUSED. WON'T DO: out of scope on principle, not unbuilt. A claim
+#      about SCOPE where 4 is a claim about TIME. Filing a refusal as a gap
+#      puts a permanent decision on a to-do list and stops GAPS.md being a
+#      list that can drain, which destroys it as a signal.
+#
+#      The rule that keeps 4 and 7 honest: --summon is available on 4 and
+#      FORBIDDEN on 7. A gap names its own escalation; a refusal offers none,
+#      because having no escalation path is what refusing on principle MEANS
+#      (hf7y/realisateur#373).
+: "${EXIT_REFUSED:=7}"
 
-export EXIT_OK EXIT_FINDING EXIT_USAGE EXIT_BLIND EXIT_REFUSED
+# 8 and above -- project-specific, documented in that tool's EXIT STATUS,
+# never a redefinition of one of the above. ecosim's `sonde` is the worked
+# example: 8 WARN, 9 CRIT, on top of this vocabulary rather than beside it.
+
+export EXIT_OK EXIT_FINDING EXIT_USAGE EXIT_NEEDS_SUMMON EXIT_GAP \
+       EXIT_BROKEN EXIT_BLIND EXIT_REFUSED
