@@ -67,3 +67,22 @@ meet gets disabled, and a private measurement drifts.
 OK**: *"I looked and found nothing"* and *"I could not look"* are different
 answers, and this estate's recorded pathology is the second being reported as
 the first. A guard that cannot tell must exit `EXIT_BLIND`, never `EXIT_OK`.
+
+The numbers are the **verb ladder**'s, decided by Zach 2026-08-18
+(hf7y/realisateur#334) so that guards and the nineteen bashified verbs speak
+one vocabulary:
+
+| | name | meaning |
+|---|---|---|
+| 0 | `EXIT_OK` | the question was asked; no findings |
+| 1 | `EXIT_FINDING` | it looked and found something |
+| 2 | `EXIT_USAGE` | the caller is wrong; nothing was measured |
+| 3 | `EXIT_NEEDS_SUMMON` | contracted, no mechanism yet, no spend authorised |
+| 4 | `EXIT_GAP` | SHOULD DO — in scope, unbuilt. `--summon` is legitimate |
+| 5 | `EXIT_BROKEN` | it ran and answered wrongly |
+| 6 | `EXIT_BLIND` | it could not read its domain. Never clean |
+| 7 | `EXIT_REFUSED` | WON'T DO — out of scope on principle. No summon lifts it |
+
+8 and above are project-specific and documented in that tool's EXIT STATUS —
+ecosim's `sonde` adds 8 WARN and 9 CRIT. They are never a redefinition of one
+of the above.
