@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 # exit-codes.test.sh -- the vocabulary is defined once, and every name is distinct.
 #
-# The property worth pinning is not the NUMBERS -- those may be changed, which
-# is the whole point of the file. It is that BLIND has a name, that the names
-# do not collide, and that OK and BLIND can never become the same value, since
-# reporting could-not-look as clean is the failure the file exists against.
+# Mostly the property worth pinning is not the NUMBERS -- a caller may retarget
+# any of them through the environment, which is the point of `: "${VAR:=n}"`.
+# It is that BLIND has a name, that the names do not collide, and that OK and
+# BLIND can never become the same value, since reporting could-not-look as
+# clean is the failure the file exists against.
+#
+# TWO numbers are asserted anyway, D3 and D4. BLIND=6 and REFUSED=7 are what
+# bashify/skel/lib/verb.sh's verb_blind and verb_refuse exit with, and Zach's
+# 2026-08-18 decision (hf7y/realisateur#334) was precisely that these two
+# vocabularies are one. If a later edit drifts them apart, that decision has
+# been undone silently, which is the thing this file exists to prevent.
 set -uo pipefail
 # shellcheck source=bin/tests/lib/harness.sh
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/harness.sh"
@@ -18,7 +25,8 @@ printf 'exit-codes.sh\n'
 # shellcheck source=/dev/null
 . "$LIB"
 
-for n in EXIT_OK EXIT_FINDING EXIT_USAGE EXIT_BLIND EXIT_REFUSED; do
+NAMES=(EXIT_OK EXIT_FINDING EXIT_USAGE EXIT_NEEDS_SUMMON EXIT_GAP EXIT_BROKEN EXIT_BLIND EXIT_REFUSED)
+for n in "${NAMES[@]}"; do
   if [ -n "${!n+set}" ]; then ok "B1 $n is defined"; else bad "B1 $n is defined"; fi
   case "${!n:-x}" in
     ''|*[!0-9]*) bad "B2 $n is a whole number" "${!n:-unset}" ;;
@@ -34,10 +42,23 @@ else
 fi
 
 # D -- every name distinct, so a caller switching on the code can tell them apart.
-dupes="$(printf '%s\n' "$EXIT_OK" "$EXIT_FINDING" "$EXIT_USAGE" "$EXIT_BLIND" "$EXIT_REFUSED" \
-  | sort | uniq -d | tr '\n' ' ')"
-[ -z "$dupes" ] && ok "D1 all five codes are distinct" \
-                || bad "D1 all five codes are distinct" "repeated: $dupes"
+dupes="$(for n in "${NAMES[@]}"; do printf '%s\n' "${!n}"; done | sort | uniq -d | tr '\n' ' ')"
+[ -z "$dupes" ] && ok "D1 all ${#NAMES[@]} codes are distinct" \
+                || bad "D1 all ${#NAMES[@]} codes are distinct" "repeated: $dupes"
+
+# D2 -- GAP and REFUSED must never coincide. "not yet" filed as "never" makes
+#       GAPS.md a list that cannot drain (hf7y/realisateur#373).
+if [ "$EXIT_GAP" != "$EXIT_REFUSED" ]; then
+  ok "D2 GAP and REFUSED are different -- a 'won't' cannot read as a 'not yet'"
+else
+  bad "D2 GAP and REFUSED are different" "both are $EXIT_GAP"
+fi
+
+# D3 -- the numbers match the verb runtime, which is where they were decided
+#       (hf7y/realisateur#334). This is the one place a NUMBER is asserted,
+#       because the whole point of the decision was that these two agree.
+eq "D3 BLIND is 6, as verb_blind exits"    "$EXIT_BLIND"   "6"
+eq "D4 REFUSED is 7, as verb_refuse exits" "$EXIT_REFUSED" "7"
 
 # E -- the caller's environment wins, so a repo may retarget without editing
 #      this file. `: "${VAR:=default}"` is what makes that true.
