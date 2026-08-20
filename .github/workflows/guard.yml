@@ -52,10 +52,18 @@ on:
         required: false
         default: .state-prose-ratchet
         type: string
+      runs_on:
+        description: >-
+          Runner label for this job, as a JSON array or a single label. The
+          default keeps every public caller on GitHub-hosted minutes; a repo
+          whose minutes are unavailable passes its own runner instead.
+        required: false
+        default: ubuntu-latest
+        type: string
 
 jobs:
   prose:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(startsWith(inputs.runs_on, '[') && inputs.runs_on || format('"{0}"', inputs.runs_on)) }}
     steps:
       # The CALLER's tree. In a reusable workflow this is the default
       # checkout -- the repo whose pull request triggered the run.
