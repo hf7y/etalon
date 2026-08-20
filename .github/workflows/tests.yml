@@ -62,4 +62,4 @@ jobs:
       # SC2034/SC2016 are excluded because CLI_NAME/CLI_USAGE/CLI_EXITS are a
       # CONTRACT read by the sourced bin/lib/cli-guard.sh, not dead locals, and
       # the usage strings deliberately contain literal $(...) a reader pastes.
-      - run: shellcheck -e SC2034,SC2016 bin/*.sh bin/lib/*.sh bin/tests/*.sh
+      - run: shellcheck -x -P bin -e SC2034,SC2016 bin/*.sh bin/lib/*.sh bin/tests/*.sh

@@ -38,6 +38,20 @@ on:
         required: false
         default: main
         type: string
+      state_prose:
+        description: >-
+          Also run bin/state-prose-lint.sh against this repo. OFF by default:
+          turning it on for a repo that has no state-prose ratchet seeds one on
+          the first run and gates from the second, so each repo opts in when it
+          is ready to hold the number.
+        required: false
+        default: false
+        type: boolean
+      state_prose_ratchet:
+        description: path, relative to the calling repo, of its state-prose ratchet.
+        required: false
+        default: .state-prose-ratchet
+        type: string
 
 jobs:
   prose:
@@ -87,3 +101,17 @@ jobs:
         run: |
           MARKDOWN_COST_RATCHET="$PWD/${{ inputs.ratchet }}" \
             bash .etalon/bin/markdown-cost.sh --census
+
+      - name: Seed the state-prose ratchet if this repo has none
+        if: inputs.state_prose && hashFiles(inputs.state_prose_ratchet) == ''
+        run: |
+          echo "::notice::no ${{ inputs.state_prose_ratchet }} -- seeding from this tree."
+          STATE_PROSE_RATCHET="$PWD/${{ inputs.state_prose_ratchet }}" \
+            bash .etalon/bin/state-prose-lint.sh --accept
+          cat "${{ inputs.state_prose_ratchet }}"
+
+      - name: State prose -- the tree may not gain descriptions of its own state
+        if: inputs.state_prose
+        run: |
+          STATE_PROSE_RATCHET="$PWD/${{ inputs.state_prose_ratchet }}" \
+            bash .etalon/bin/state-prose-lint.sh
