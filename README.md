@@ -5,6 +5,8 @@ here, and they live **only** here:
 
 - **`bin/markdown-cost.sh`** — the prose guard. Prices what a diff adds and
   holds the tree against a ratchet that only falls.
+- **`bin/state-prose-lint.sh`** — prose describing state, not mechanism.
+- **`bin/mechanism-budget.sh`** — a new mechanism must be paid for.
 - **`bin/lib/exit-codes.sh`** — the exit vocabulary. `EXIT_BLIND` and friends,
   so the number is one edit rather than twenty-one.
 
