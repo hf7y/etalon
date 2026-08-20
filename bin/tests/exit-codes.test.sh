@@ -19,8 +19,11 @@ set -uo pipefail
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/exit-codes.sh"
 printf 'exit-codes.sh\n'
 
-[ -r "$LIB" ] && ok "A1 the library exists and is readable" \
-              || bad "A1 the library exists and is readable" "$LIB"
+if [ -r "$LIB" ]; then
+  ok "A1 the library exists and is readable"
+else
+  bad "A1 the library exists and is readable" "$LIB"
+fi
 
 # shellcheck source=/dev/null
 . "$LIB"
@@ -43,8 +46,11 @@ fi
 
 # D -- every name distinct, so a caller switching on the code can tell them apart.
 dupes="$(for n in "${NAMES[@]}"; do printf '%s\n' "${!n}"; done | sort | uniq -d | tr '\n' ' ')"
-[ -z "$dupes" ] && ok "D1 all ${#NAMES[@]} codes are distinct" \
-                || bad "D1 all ${#NAMES[@]} codes are distinct" "repeated: $dupes"
+if [ -z "$dupes" ]; then
+  ok "D1 all ${#NAMES[@]} codes are distinct"
+else
+  bad "D1 all ${#NAMES[@]} codes are distinct" "repeated: $dupes"
+fi
 
 # D2 -- GAP and REFUSED must never coincide. "not yet" filed as "never" makes
 #       GAPS.md a list that cannot drain (hf7y/realisateur#373).
@@ -67,9 +73,13 @@ eq "E1 a preset value is honoured, not overwritten" "$out" "9"
 
 # F -- sourcing prints nothing. A library that chatters breaks any caller
 #      capturing stdout, and every consumer here is a guard that does.
+# shellcheck source=/dev/null
 noise="$(. "$LIB" 2>/dev/null)"
-[ -z "$noise" ] && ok "F1 sourcing is silent on stdout" \
-                || bad "F1 sourcing is silent on stdout" "$noise"
+if [ -z "$noise" ]; then
+  ok "F1 sourcing is silent on stdout"
+else
+  bad "F1 sourcing is silent on stdout" "$noise"
+fi
 
 summary
 [ "$fail" -eq 0 ]

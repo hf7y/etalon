@@ -40,6 +40,20 @@ jobs:
       - name: Prose ratchet -- the tree may not grow
         run: MARKDOWN_COST_RATCHET="$PWD/.prose-ratchet" bash bin/markdown-cost.sh --census
 
+  state-prose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tree may not gain state-describing prose
+        run: STATE_PROSE_RATCHET="$PWD/.state-prose-ratchet" bash bin/state-prose-lint.sh
+
+  mechanism-budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: A new mechanism must be paid for
+        run: MECHANISM_BUDGET_RATCHET="$PWD/.mechanism-ratchet" bash bin/mechanism-budget.sh --repo .
+
   shellcheck:
     runs-on: ubuntu-latest
     steps:
@@ -48,4 +62,4 @@ jobs:
       # SC2034/SC2016 are excluded because CLI_NAME/CLI_USAGE/CLI_EXITS are a
       # CONTRACT read by the sourced bin/lib/cli-guard.sh, not dead locals, and
       # the usage strings deliberately contain literal $(...) a reader pastes.
-      - run: shellcheck -e SC2034,SC2016 bin/*.sh bin/lib/*.sh bin/tests/*.sh
+      - run: shellcheck -x -P bin -e SC2034,SC2016 bin/*.sh bin/lib/*.sh bin/tests/*.sh

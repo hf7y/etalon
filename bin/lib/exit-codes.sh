@@ -1,31 +1,9 @@
 #!/usr/bin/env bash
 # exit-codes.sh -- the estate's exit vocabulary, defined once.
 #
-# WHY THIS FILE EXISTS. Measured across hf7y/realisateur's bin/ on 2026-08-17,
-# THREE different codes were live for the SAME condition -- a guard that could
-# not look:
-#
-#   exit 2  hardcoded-home-lint, no-worktree-lint, ownership-audit,
-#           path-provenance-audit, precipitation-scan, repo-settings-provision,
-#           run-suites, served-not-cloned, shellcheck-lint
-#   exit 3  carry-drift, install-verb-build, pivot, reach-lint, release-ledger,
-#           selfdev-release-tick, silence-audit, verbs-refresh
-#   exit 6  claim-drift, closeout-lint, floor-check, gh-sign
-#
-# Zach, 2026-08-17: "Anything that requires 21 scripts to change should not; it
-# should be changeable in one place. That is an obvious drift liability."
-#
-# THE NUMBERS ARE THE VERB LADDER's, decided by Zach 2026-08-18
-# (hf7y/realisateur#334): "we decided a 6 or 7 level convention at some point
-# for the verbs etc." This file first shipped BLIND=3 and REFUSED=4, which
-# COLLIDED with bashify/skel/lib/verb.sh -- where 3 is NEEDS-SUMMON and 4 is
-# GAP -- so a caller switching on a code could not tell which vocabulary it
-# was reading. Nineteen bashified verbs already speak the verb ladder through
-# verb_blind/verb_refuse, and ecosim's `sonde` extends it upward with 8 WARN
-# and 9 CRIT. The verbs were right; this file moved.
-#
-# So the NUMBER lives here and nowhere else. A script says `exit "$EXIT_BLIND"`,
-# and changing what BLIND means is one edit in this file.
+# The number lives here and nowhere else. A script says `exit "$EXIT_BLIND"`,
+# and changing what BLIND means is one edit in this file. The values are the
+# verb ladder's, so a caller switching on a code reads one vocabulary.
 #
 # THE DISTINCTION THAT MATTERS MOST is BLIND vs OK. "I looked and found
 # nothing" and "I could not look" are different answers, and this estate's
