@@ -202,9 +202,7 @@ run allowroot env
 rc    "D1 a NEW allowlisted root document exits 0" 0 "$RUN_RC"
 hasnt "D1 and raises no FLAG at all"               "$RUN_OUT" "FLAG ["
 
-# D1b: the two the bashify skeleton writes. A repo converting to `bashified`
-# adds both, named by the skeleton rather than chosen, so flagging them made
-# every conversion PR unmergeable (hf7y/gardien#59).
+# D1b: the skeleton writes both; flagging them strands conversions (gardien#59)
 newrepo allowskel
 printf 'the contract\n' > "$T/allowskel/CONTRACT.md"
 printf 'the gaps\n' > "$T/allowskel/GAPS.md"
