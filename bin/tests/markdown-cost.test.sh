@@ -162,7 +162,7 @@ run newroot env
 rc  "C1 a new top-level .md exits 1 even at a low ratio" 1 "$RUN_RC"
 has "C2 it names the document"       "$RUN_OUT" "FLAG [new-root-document]"
 has "C2 by path"                     "$RUN_OUT" "PLAN-2026-08-07.md"
-has "C2 and prints the allowlist"    "$RUN_OUT" "allowlist: README.md CLAUDE.md man/*"
+has "C2 and prints the allowlist"    "$RUN_OUT" "allowlist: README.md CLAUDE.md CONTRACT.md GAPS.md man/*"
 
 # C3: editing the document that was already there is how a record stays
 # current. It must cost nothing beyond the ratio.
@@ -201,6 +201,20 @@ G "$T/allowroot" commit -qm claude
 run allowroot env
 rc    "D1 a NEW allowlisted root document exits 0" 0 "$RUN_RC"
 hasnt "D1 and raises no FLAG at all"               "$RUN_OUT" "FLAG ["
+
+# D1b: the two the bashify skeleton writes. A repo converting to `bashified`
+# adds both, named by the skeleton rather than chosen, so flagging them made
+# every conversion PR unmergeable (hf7y/gardien#59).
+newrepo allowskel
+printf 'the contract\n' > "$T/allowskel/CONTRACT.md"
+printf 'the gaps\n' > "$T/allowskel/GAPS.md"
+lines 50 "$T/allowskel/more.sh" 'echo line'
+G "$T/allowskel" checkout -q -b work
+G "$T/allowskel" add -A
+G "$T/allowskel" commit -qm skeleton
+run allowskel env
+rc    "D1b the skeleton's own root documents exit 0" 0 "$RUN_RC"
+hasnt "D1b and raise no new-root-document FLAG" "$RUN_OUT" "FLAG [new-root-document]"
 
 # D2: the ratio's call site reads the SAME list. 90 lines of README.md would be
 # a 90% prose diff if the allowlist were only consulted by the other check.
