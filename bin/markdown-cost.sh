@@ -35,10 +35,9 @@ CLI_POSITIONAL=any
 cli_guard "$@"
 
 # --- the allowlist, in ONE place ---------------------------------------------
-# Read from here by both call sites (the ratio's numerator and the new-root-
-# document check). Retyping it per call site is how the two checks drift apart
+# Both call sites read it here; retyping it per site is how they drift apart.
 #   [rest: vault:realisateur/guard-archaeology-20260817.md]
-MD_ALLOW=( 'README.md' 'CLAUDE.md' 'man/*' '.claude/commands/*' )
+MD_ALLOW=( 'README.md' 'CLAUDE.md' 'CONTRACT.md' 'GAPS.md' 'man/*' '.claude/commands/*' )
 
 md_allowlisted() { # <path> -> 0 if the allowlist covers it
   local pat
