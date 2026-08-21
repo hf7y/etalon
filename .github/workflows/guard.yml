@@ -60,9 +60,31 @@ on:
         required: false
         default: ubuntu-latest
         type: string
+      prose:
+        description: >-
+          Run the prose guard. On by default. A caller that wires this
+          workflow to its `bashified` branch for the runtime check alone
+          turns it off, rather than pricing a build branch's prose.
+        required: false
+        default: true
+        type: boolean
+      runtime:
+        description: >-
+          Also check this repo's copy of the shared runtime against
+          canon/verb.sh. Off by default, because the file lives on the
+          `bashified` branch and a main-branch caller has none.
+        required: false
+        default: false
+        type: boolean
+      runtime_path:
+        description: path, relative to the calling repo, of its copy of the runtime.
+        required: false
+        default: lib/verb.sh
+        type: string
 
 jobs:
   prose:
+    if: inputs.prose
     runs-on: ${{ fromJSON(startsWith(inputs.runs_on, '[') && inputs.runs_on || format('"{0}"', inputs.runs_on)) }}
     steps:
       # The CALLER's tree. In a reusable workflow this is the default
@@ -123,3 +145,25 @@ jobs:
         run: |
           STATE_PROSE_RATCHET="$PWD/${{ inputs.state_prose_ratchet }}" \
             bash .etalon/bin/state-prose-lint.sh
+
+  runtime:
+    if: inputs.runtime
+    runs-on: ${{ fromJSON(startsWith(inputs.runs_on, '[') && inputs.runs_on || format('"{0}"', inputs.runs_on)) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: hf7y/etalon
+          ref: ${{ inputs.ref }}
+          path: .etalon
+      - name: Is this repo's runtime the canonical one?
+        run: |
+          canon=.etalon/canon/verb.sh
+          theirs="${{ inputs.runtime_path }}"
+          [ -f "$canon" ]  || { echo "::error::BLIND -- no canonical runtime at $canon"; exit 1; }
+          [ -f "$theirs" ] || { echo "::error::BLIND -- no runtime at $theirs. Point runtime_path at it, or drop runtime: true."; exit 1; }
+          cmp -s "$canon" "$theirs" && { echo "$theirs matches canon/verb.sh ($(wc -l < "$canon") lines)."; exit 0; }
+          echo "::error::$theirs is not etalon's canon/verb.sh -- canonical $(wc -l < "$canon") lines, this copy $(wc -l < "$theirs")."
+          diff "$canon" "$theirs" | head -40
+          echo "The runtime is one contract. Take etalon's copy rather than editing this one."
+          exit 1
