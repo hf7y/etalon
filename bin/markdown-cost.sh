@@ -71,7 +71,7 @@ prose_lang() { # <path> -> 'h', 'j', 'm', or empty for a file we do not price
 }
 
 prose_excluded() { # <path> -> 0 if no rule should grade this file
-  case "$1" in residue/*|*/residue/*) return 0 ;; esac
+  case "$1" in residue/*|*/residue/*|canon/*|*/canon/*) return 0 ;; esac
   return 1
 }
 

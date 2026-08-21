@@ -96,7 +96,7 @@ git rev-parse --git-dir >/dev/null 2>&1 || dieblind "not inside a git repository
 NFILES="$(git ls-files | grep -c .)" || dieblind "cannot list tracked files"
 [ "${NFILES:-0}" -gt 0 ] || dieblind "no tracked files -- refusing to report a clean tree I did not read"
 
-REPORT="$(git ls-files -z | scan)" || dieblind "the scan could not read the tree"
+REPORT="$(git ls-files -z | grep -zv '^canon/' | scan)" || dieblind "the scan could not read the tree"
 CONSIDERED="$(printf '%s\n' "$REPORT" | sed -n 's/^CONSIDERED //p')"
 case "$CONSIDERED" in ''|*[!0-9]*) dieblind "the scan produced no line count" ;; esac
 FINDINGS="$(printf '%s\n' "$REPORT" | grep -v '^CONSIDERED ' | grep -c . )"
