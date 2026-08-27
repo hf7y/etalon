@@ -204,7 +204,14 @@ census_ref() { # <ref> -> prose lines in that tree, or empty if it cannot be rea
   local d out=''
   d="$(mktemp -d)" || return 1
   if git archive --format=tar "$1" 2>/dev/null | tar -x -C "$d" 2>/dev/null; then
-    out="$( cd "$d" && find . -type f -print0 | census_stream )"
+    # -L: census() reaches a tracked symlink's content too, via `git ls-files`
+    # plus `[ -f "$f" ]` following the link. Plain `find -type f` reports a
+    # symlink's type as 'l', not 'f', so it never matched here -- every
+    # tracked symlink to a prose file was invisible to this side only. Found
+    # on hf7y/scheduler: schedule/scheduler.conf -> ../.scheduler/schedule.conf
+    # (82 prose lines) silently dropped from every merge-base census, so every
+    # PR was charged those 82 lines as if the branch had added them.
+    out="$( cd "$d" && find -L . -type f -print0 | census_stream )"
   fi
   rm -rf "$d"
   printf '%s' "$out"

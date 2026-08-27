@@ -353,6 +353,24 @@ RUN_OUT="$(cd "$G6" && MARKDOWN_COST_RATCHET="$G6/.ratchet" "$SCRIPT" --census 2
 rc  "G6 a hand-raised baseline is rejected" 1 "$RUN_RC"
 has "G6 and names both numbers"   "$RUN_OUT" "RAISES the baseline from 100 to 999"
 has "G6 and offers no override"   "$RUN_OUT" "there is no override"
+# G7: census() (git ls-files, symlinks resolved by `[ -f ]`) and census_ref()
+# (git archive + tar extraction) must count a tracked symlink's prose the
+# same way. A merge-base tree with an unchanged tracked symlink must never
+# be reported as lighter than the identical live tree.
+G7="$T/g7"; mkdir -p "$G7" && (
+  cd "$G7" && git init -q -b main .
+  git config user.email t@t.invalid && git config user.name t
+  { printf '#!/usr/bin/env bash\n'; for i in $(seq 1 30); do printf '# line %d\n' "$i"; done; } > real.sh
+  ln -s real.sh link.sh
+  printf '# r\n1\n' > .ratchet   # unit 1: always forces the merge-base recompute
+  git add -A && git commit -qm base
+  git update-ref refs/remotes/origin/main HEAD
+)
+RUN_OUT="$(cd "$G7" && MARKDOWN_COST_RATCHET="$G7/.ratchet" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc    "G7 an unchanged tracked symlink is not billed as growth" 0 "$RUN_RC"
+has   "G7 and reports it as adding nothing"                     "$RUN_OUT" "adds nothing over the merge base"
+hasnt "G7 and raises no FLAG"                                   "$RUN_OUT" "FLAG ["
+
 unset MARKDOWN_COST_RATCHET
 
 echo
