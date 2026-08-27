@@ -23,8 +23,11 @@ CLI_SUMMARY='what fraction of this branch is prose, and did it add another root 
 CLI_USAGE='  markdown-cost.sh            price $(git merge-base HEAD origin/main)..HEAD
   markdown-cost.sh <range>    price an explicit range, e.g. main..HEAD
   markdown-cost.sh --census   count prose in the TREE against bin/markdown-cost.ratchet
-  markdown-cost.sh --accept   record the current tree count as the baseline'
-CLI_FLAGS='--census --accept'
+  markdown-cost.sh --accept   record the current tree count as the baseline
+  markdown-cost.sh --count-docstrings <file.py>
+                              print the docstring prose lines in one file, so
+                              the heuristic can be checked against Python ast'
+CLI_FLAGS='--census --accept --count-docstrings'
 CLI_EXITS='  0  the diff was read and priced, and it came in under the threshold
   1  over the markdown ratio, it adds a new top-level *.md file, or the tree
      rose above the prose ratchet
@@ -63,7 +66,8 @@ md_is_top_level() { # <path> -> 0 if the path has no directory component
 prose_lang() { # <path> -> 'h', 'j', 'm', or empty for a file we do not price
   case "$1" in
     *.md|*.markdown)                       printf 'm' ;;
-    *.sh|*.bash|*.conf|*.yml|*.yaml|*.py)  printf 'h' ;;
+    *.sh|*.bash|*.conf|*.yml|*.yaml)       printf 'h' ;;
+    *.py)                                  printf 'p' ;;
     *.mjs|*.js)                            printf 'j' ;;
     *)                                     : ;;
   esac
@@ -79,10 +83,50 @@ is_comment() {
   local s="$2"
   s="${s#"${s%%[![:space:]]*}"}"     # strip leading whitespace
   case "$1" in
-    h) case "$s" in '#!'*) return 1 ;; '#'*) return 0 ;; esac ;;   # '#!' is a directive
+    h|p) case "$s" in '#!'*) return 1 ;; '#'*) return 0 ;; esac ;; # '#!' is a directive
     j) case "$s" in '//'*|'/*'*|'*'*) return 0 ;; esac ;;
   esac
   return 1
+}
+
+# --- Python docstrings are prose, and used not to be ------------------------
+# Until MEASURE_UNIT 2 a .py file was priced by its '#' comments alone, so the
+# place Python actually keeps its prose was free. wtul#73 reaped four module
+# docstrings from ~135 lines to ~45 and this guard's census did not move by one
+# line -- the reap was real and the number said nothing. A guard that prices
+# every language's comments except the one that matters for the language most
+# of this estate is written in is measuring the wrong thing.
+#
+# A docstring is a triple-quoted block that BEGINS its line (so `SQL = """..."""`
+# stays data, not prose) and sits in first-statement position: start of file, or
+# after a header line ending in ':'. That pair of conditions is what separates a
+# docstring from a triple-quoted string literal, and it is checked against
+# Python's own `ast` in bin/tests/markdown-cost.test.sh rather than asserted.
+# Delimiter-only lines and blanks are not prose, exactly as a ``` fence is not.
+count_py_docstrings() { # <path> -> docstring prose lines
+  awk '
+  { line = $0; s = line; sub(/^[ \t]+/, "", s)
+    if (indoc) {
+      if (index(s, q) == 1 && length(s) == 3) { indoc = 0; next }
+      p = index(line, q)
+      if (p > 0) { rest = substr(line, 1, p - 1); indoc = 0
+                   if (rest ~ /[^ \t]/) n++; next }
+      if (s != "") n++
+      next }
+    if (s ~ /^[ \t]*#/) next
+    if (s == "") next
+    t = s; sub(/^[A-Za-z]{0,2}/, "", t)          # r"""  f"""  rb"""
+    if (index(t, "\"\"\"") == 1) q = "\"\"\""
+    else if (index(t, "'"'"'") == 1) q = "'"'"'"
+    else { prev = s; prevset = 1; next }
+    if (!(prevset == 0 || prev ~ /:[ \t]*$/)) { prev = s; prevset = 1; next }
+    body = substr(t, 4); cp = index(body, q)
+    if (cp > 0) { head = substr(body, 1, cp - 1)
+                  if (head ~ /[^ \t]/) n++
+                  prev = s; prevset = 1; next }
+    if (body ~ /[^ \t]/) n++
+    indoc = 1; prevset = 1; next }
+  END { print n+0 }' "$1"
 }
 
 die2() { printf '%s: %s\n' "$CLI_NAME" "$*" >&2; exit 2; }
@@ -107,6 +151,35 @@ esac
 
 # --- the census and its ratchet ----------------------------------------------
 RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.ratchet}"
+
+# MEASURE_UNIT is the version of the QUESTION, not of the script. Bump it only
+# when a change makes an old baseline mean something different -- a new language
+# priced, a predicate widened. A bug fix that makes the same question answered
+# correctly does NOT bump it.
+#
+#   1  markdown + '#' and '//' comment lines
+#   2  ...and Python docstrings (2026-08-26)
+#
+# WHY THIS EXISTS AT ALL. Unit 2 raised five of six estate repos above their
+# committed floor at once (crt +3278, wtul +1933, senechal +693). The ratchet
+# only falls and --accept refuses to raise, so without this the whole estate
+# wedges: no PR passes anywhere, and the only way out is the hand edit the
+# guard is built to reject. A measurement change is not prose growth, and must
+# not be charged as it.
+#
+# It is NOT an override, and it is deliberately not reachable from a repo. On a
+# unit mismatch the committed integer is never read as a floor -- it is in the
+# wrong unit and says nothing -- so the floor becomes the merge-base tree,
+# measured LIVE in the current unit. Editing the stamp in your own ratchet
+# therefore buys nothing: the branch still cannot add a line, because the
+# comparison it must pass never involved the stamped number.
+MEASURE_UNIT=2
+
+ratchet_unit() { # <file-or-stdin-text> -> the unit a ratchet was written in
+  local u
+  u="$(printf '%s\n' "$1" | sed -n 's/^# *unit: *\([0-9][0-9]*\).*/\1/p' | head -1)"
+  printf '%s' "${u:-1}"     # every ratchet written before the stamp is unit 1
+}
 
 # census_stream reads NUL-separated repo-relative paths and totals their prose.
 # Two callers feed it: the working tree via `git ls-files`, and the merge-base
@@ -148,9 +221,19 @@ count_prose() { # <lang> <path> -> prose line count for one file
       [ -n "$s" ] || continue
       is_comment "$1" "$line" && n=$((n + 1))
     done < "$2"
+    [ "$1" = p ] && n=$((n + $(count_py_docstrings "$2")))
     printf '%d' "$n"
   fi
 }
+
+# Exposed so bin/tests can pin this heuristic to Python's own ast. A scanner for
+# a language it does not parse is a guess until something independent checks it.
+if [ "${1:-}" = --count-docstrings ]; then
+  [ $# -eq 2 ] || die2 "--count-docstrings takes exactly one file, got $(($# - 1))"
+  [ -f "$2" ] || die2 "no such file: $2"
+  count_py_docstrings "$2"
+  exit 0
+fi
 
 if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
   git rev-parse --git-dir >/dev/null 2>&1 || die2 "not inside a git repository"
@@ -160,8 +243,18 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
     # A ratchet that can be re-accepted upward is not a ratchet. If the tree
     # has grown, --accept refuses; reap prose, do not move the floor.
     if [ -f "$RATCHET" ]; then
-      prev="$(grep -v '^#' "$RATCHET" | tr -d '[:space:]')"
+      prev_text="$(cat "$RATCHET")"
+      prev="$(printf '%s\n' "$prev_text" | grep -v '^#' | tr -d '[:space:]')"
+      prev_unit="$(ratchet_unit "$prev_text")"
       case "$prev" in ''|*[!0-9]*) prev='' ;; esac
+      # Across a unit change the old number is not a smaller measurement of the
+      # same thing, so "above it" is not growth. Re-base once, and say so.
+      if [ -n "$prev" ] && [ "$prev_unit" != "$MEASURE_UNIT" ]; then
+        printf 'markdown-cost --accept -- RE-BASING from unit %s to unit %s.\n' "$prev_unit" "$MEASURE_UNIT"
+        printf '  The old baseline of %s is in a unit this guard no longer measures in;\n' "$prev"
+        printf '  %s is the same tree re-measured, not prose that was added.\n' "$now"
+        prev=''
+      fi
       if [ -n "$prev" ] && [ "$now" -gt "$prev" ]; then
         printf 'markdown-cost --accept -- REFUSED. The tree is %d line(s) ABOVE the\n' "$((now - prev))" >&2
         printf '  baseline of %s, and this ratchet only falls. Reap prose instead.\n' "$prev" >&2
@@ -184,15 +277,24 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
       printf '  therefore NOT in this baseline. census() reads `git ls-files`. Stage them\n' >&2
       printf '  and re-run --accept, or the next --census fails on this very commit.\n' >&2
     fi
-    printf '# markdown-cost.ratchet -- prose lines in this tree. SHRINKS ONLY.\n# Written by markdown-cost.sh --accept, which refuses to raise it. A hand\n# edit that raises it is rejected by --census. See bin/markdown-cost.sh.\n# accepted %s\n%s\n' \
-      "$(date -Is)" "$now" > "$RATCHET" || die2 "cannot write $RATCHET"
+    printf '# markdown-cost.ratchet -- prose lines in this tree. SHRINKS ONLY.\n# Written by markdown-cost.sh --accept, which refuses to raise it. A hand\n# edit that raises it is rejected by --census. See bin/markdown-cost.sh.\n# unit: %s -- what was measured. A number from another unit is not a floor.\n# accepted %s\n%s\n' \
+      "$MEASURE_UNIT" "$(date -Is)" "$now" > "$RATCHET" || die2 "cannot write $RATCHET"
     printf 'markdown-cost --accept -- baseline is now %s prose line(s).\n' "$now"
     exit 0
   fi
   [ -f "$RATCHET" ] || die2 "no ratchet at $RATCHET -- run --accept to seed it. A missing baseline is not a pass."
-  was="$(grep -v '^#' "$RATCHET" | tr -d '[:space:]')"
+  was_text="$(cat "$RATCHET")"
+  was="$(printf '%s\n' "$was_text" | grep -v '^#' | tr -d '[:space:]')"
   case "$was" in ''|*[!0-9]*) die2 "unreadable baseline in $RATCHET: '$was'" ;; esac
-  printf 'markdown-cost --census -- %s prose line(s), baseline %s\n' "$now" "$was"
+  was_unit="$(ratchet_unit "$was_text")"
+  stale_unit=0
+  [ "$was_unit" = "$MEASURE_UNIT" ] || stale_unit=1
+  if [ "$stale_unit" = 1 ]; then
+    printf 'markdown-cost --census -- %s prose line(s); baseline %s is unit %s, this guard measures in unit %s.\n' \
+      "$now" "$was" "$was_unit" "$MEASURE_UNIT"
+  else
+    printf 'markdown-cost --census -- %s prose line(s), baseline %s\n' "$now" "$was"
+  fi
 
   # A branch answers for the prose IT adds, not for main moving beneath it.
   # Found on this guard's own first CI run: the branch was under its own
@@ -211,14 +313,40 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
   # to fit three guards, once to fit a rollout -- each time with a written
   #   [rest: vault:realisateur/guard-archaeology-20260817.md]
   if [ -n "$mb" ]; then
-    prev="$(git show "$mb:${RATCHET#"$(git rev-parse --show-toplevel)/"}" 2>/dev/null | grep -v '^#' | tr -d '[:space:]')"
+    prev_text="$(git show "$mb:${RATCHET#"$(git rev-parse --show-toplevel)/"}" 2>/dev/null)"
+    prev="$(printf '%s\n' "$prev_text" | grep -v '^#' | tr -d '[:space:]')"
     case "$prev" in ''|*[!0-9]*) prev='' ;; esac
+    # Two numbers in different units are not a raise; the re-base IS the change.
+    [ "$(ratchet_unit "$prev_text")" = "$was_unit" ] || prev=''
     if [ -n "$prev" ] && [ "$was" -gt "$prev" ]; then
       printf '  FLAG [prose-ratchet] this branch RAISES the baseline from %s to %s.\n' "$prev" "$was"
       printf '        The ratchet only falls, and there is no override. Reap prose until\n'
       printf '        the tree fits, or leave the number alone.\n'
       exit 1
     fi
+  fi
+
+  if [ "$stale_unit" = 1 ]; then
+    # The number in the file answers a question this guard no longer asks, so it
+    # is not consulted. The merge-base tree is, measured live in the current
+    # unit -- which is why a hand-edited stamp wins nothing: this comparison
+    # never reads the stamped integer.
+    if [ -z "$base" ]; then
+      printf '  FLAG [prose-ratchet] the baseline is unit %s and there is no merge base to\n' "$was_unit"
+      printf '        re-measure against, so this branch cannot be priced at all.\n'
+      printf '        Fetch origin/main, or run --accept to re-base deliberately.\n'
+      exit 1
+    fi
+    printf '  merge base holds %s in unit %s; this branch is %+d against it.\n' "$base" "$MEASURE_UNIT" "$((now - base))"
+    if [ "$now" -gt "$base" ]; then
+      printf '  FLAG [prose-ratchet] this branch adds %d prose line(s).\n' "$((now - base))"
+      printf '        (The unit changed since %s was written, so that number is not the\n' "$RATCHET"
+      printf '        floor here -- the merge-base tree is. Re-basing does not pay for\n'
+      printf '        prose this branch adds.) Reap prose elsewhere in this branch.\n'
+      exit 1
+    fi
+    printf '  ok -- adds nothing over the merge base. Run --accept to re-base %s to unit %s.\n' "$RATCHET" "$MEASURE_UNIT"
+    exit 0
   fi
 
   if [ "$now" -gt "$was" ]; then
@@ -346,6 +474,30 @@ while IFS= read -r line; do
   fi
 done < <(git diff --unified=0 "$RANGE" -- 2>/dev/null)
 flush_cm
+
+# --- Python docstrings, added ------------------------------------------------
+# Deliberately NOT read from the patch. A docstring is only distinguishable from
+# a triple-quoted data literal by what precedes it, and `--unified=0` hunks omit
+# exactly those lines -- a patch-side scanner would have to guess, and would
+# guess differently on each side of a rename. So each changed .py file is
+# measured WHOLE on both ends of the range and the difference is the bill. Files
+# added by the range have no left side; `git show` fails and the left is 0.
+ds_added=0
+while IFS= read -r dpath; do
+  [ -n "$dpath" ] || continue
+  prose_excluded "$dpath" && continue
+  case "$dpath" in *.py) ;; *) continue ;; esac
+  l=0; r=0
+  lt="$(mktemp)"; rt="$(mktemp)"
+  git show "${RANGE%%..*}:$dpath" >"$lt" 2>/dev/null && l="$(count_py_docstrings "$lt")"
+  git show "${RANGE##*..}:$dpath" >"$rt" 2>/dev/null && r="$(count_py_docstrings "$rt")"
+  rm -f "$lt" "$rt"
+  [ "$r" -gt "$l" ] && ds_added=$((ds_added + r - l))
+done < <(git diff --name-only "$RANGE" -- 2>/dev/null)
+# cm_added only. Those lines already came through the patch as added non-blank
+# lines and are in cm_total; is_comment just could not see they were prose. This
+# RECLASSIFIES them, and adding to the denominator too would bill them twice.
+[ "$ds_added" -gt 0 ] && cm_added=$((cm_added + ds_added))
 
 # --- report ------------------------------------------------------------------
 printf 'markdown-cost -- %s\n' "$RANGE"
