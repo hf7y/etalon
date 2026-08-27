@@ -356,5 +356,136 @@ has "G6 and offers no override"   "$RUN_OUT" "there is no override"
 unset MARKDOWN_COST_RATCHET
 
 echo
-summary
 [ "$fail" -eq 0 ] || exit 1
+
+echo "-- P. Python docstrings are prose (MEASURE_UNIT 2)"
+# The bug this suite exists to keep fixed: until unit 2 a .py file was priced by
+# its '#' comments alone, so wtul#73 could cut four module docstrings from ~135
+# lines to ~45 and move the census by zero. See markdown-cost.sh's
+# count_py_docstrings header.
+newrepo pydoc
+mkdir -p "$T/pydoc/lib"
+cat > "$T/pydoc/lib/essay.py" <<'PY'
+"""One.
+
+Two.
+"""
+SQL = """
+select 1
+select 2
+"""
+def f():
+    """Three."""
+    x = """
+    not prose
+    """
+    return x
+PY
+G "$T/pydoc" checkout -q -b work
+G "$T/pydoc" add -A
+G "$T/pydoc" commit -qm docstrings
+run pydoc env
+has "P1 the 3 docstring lines are billed as comments" "$RUN_OUT" "3 of 13 added non-markdown line(s) are comments"
+hasnt "P2 and the 5 data-literal lines are not"       "$RUN_OUT" "8 of 13"
+
+echo "-- P(census). a docstring reap MOVES the census"
+RUN_OUT="$(cd "$T/pydoc" && MARKDOWN_COST_RATCHET="$T/pydoc/.r" "$SCRIPT" --accept 2>&1)"
+has "P3 --accept seeds and stamps the unit"          "$(cat "$T/pydoc/.r")" "# unit: 2"
+before="$(grep -v '^#' "$T/pydoc/.r" | tr -d '[:space:]')"
+printf '"""One."""\n' > "$T/pydoc/lib/essay.py"
+G "$T/pydoc" add -A; G "$T/pydoc" commit -qm reap
+after="$(cd "$T/pydoc" && MARKDOWN_COST_RATCHET="$T/pydoc/.r" "$SCRIPT" --census 2>&1)"
+has "P4 cutting a docstring lowers the count"        "$after" "below the baseline"
+
+echo "-- P(ast). the heuristic answers to Python, not to itself"
+# A hand-written scanner for a language it does not parse is a guess unless
+# something independent checks it. This pins count_py_docstrings to ast.
+if command -v python3 >/dev/null 2>&1; then
+  cat > "$T/ast_ref.py" <<'PY'
+import ast, sys
+src = open(sys.argv[1], encoding='utf-8').read()
+lines = src.splitlines(); total = 0
+for node in ast.walk(ast.parse(src)):
+    body = getattr(node, 'body', None)
+    if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) or not body:
+        continue
+    first = body[0]
+    if not (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)):
+        continue
+    seg = lines[first.lineno-1:first.end_lineno]
+    for d in ('"""', "'''"):
+        if d in seg[0]:  seg[0]  = seg[0].split(d, 1)[-1];  break
+    for d in ('"""', "'''"):
+        if d in seg[-1]: seg[-1] = seg[-1].rsplit(d, 1)[0]; break
+    total += sum(1 for l in seg if l.strip())
+print(total)
+PY
+  cat > "$T/tricky.py" <<'PY'
+"""Module doc line one.
+
+Line three.
+"""
+SQL = """
+select 1
+"""
+QUERY = '''
+not prose
+'''
+def f():
+    """One-liner."""
+    x = """
+    also not prose
+    """
+    return x
+class C:
+    '''Class doc.
+    Second line.
+    '''
+    def g(self):
+        r"""Raw doc.
+        more.
+        """
+def h():
+    # not a docstring below
+    pass
+foo(
+    """arg string, not prose""",
+)
+PY
+  # shellcheck disable=SC1090
+  ref="$(python3 "$T/ast_ref.py" "$T/tricky.py")"
+  mine="$("$SCRIPT" --count-docstrings "$T/tricky.py")"
+  eq "P5 count_py_docstrings agrees with ast on the tricky file" "$mine" "$ref"
+else
+  echo "  SKIP P5 -- no python3 to check the heuristic against"
+fi
+
+echo "-- U. a unit change re-bases once, and pays for nothing"
+newrepo unitchg
+mkdir -p "$T/unitchg/lib"
+printf '"""Doc one.\n\nDoc two.\n"""\n' > "$T/unitchg/lib/m.py"
+G "$T/unitchg" add -A; G "$T/unitchg" commit -qm seed
+# a unit-1 ratchet: the number a pre-docstring guard would have written
+printf '# markdown-cost.ratchet\n# accepted whenever\n1\n' > "$T/unitchg/.r"
+G "$T/unitchg" add -A; G "$T/unitchg" commit -qm ratchet
+G "$T/unitchg" update-ref refs/remotes/origin/main main
+G "$T/unitchg" checkout -q -b work
+RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc  "U1 a stale-unit baseline does not fail a branch that adds nothing" 0 "$RUN_RC"
+has "U2 it says which unit the old number was in"    "$RUN_OUT" "is unit 1, this guard measures in unit 2"
+has "U3 and points at --accept to re-base"           "$RUN_OUT" "re-base"
+# ...but the branch still cannot add prose while the unit is stale
+printf '"""Doc one.\n\nDoc two.\nDoc three.\nDoc four.\n"""\n' > "$T/unitchg/lib/m.py"
+G "$T/unitchg" add -A; G "$T/unitchg" commit -qm "add prose"
+RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc  "U4 a stale unit does NOT excuse prose this branch adds" 1 "$RUN_RC"
+has "U5 it prices against the merge base, not the stamp"     "$RUN_OUT" "adds 2 prose line(s)"
+
+echo "-- U(accept). --accept still refuses to raise WITHIN a unit"
+printf '# markdown-cost.ratchet\n# unit: 2\n# accepted whenever\n1\n' > "$T/unitchg/.r"
+RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --accept 2>&1)"; RUN_RC=$?
+rc  "U6 same-unit raise is still REFUSED"            1 "$RUN_RC"
+has "U7 and says so"                                 "$RUN_OUT" "REFUSED"
+
+summary
