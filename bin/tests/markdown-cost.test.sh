@@ -355,6 +355,21 @@ has "G6 and names both numbers"   "$RUN_OUT" "RAISES the baseline from 100 to 99
 has "G6 and offers no override"   "$RUN_OUT" "there is no override"
 unset MARKDOWN_COST_RATCHET
 
+G7="$T/g7"; mkdir -p "$G7" && (
+  cd "$G7" && git init -q -b main .
+  git config user.email t@t.invalid && git config user.name t
+  printf '#!/usr/bin/env bash\n# one\n# two\n' > real.sh
+  ln -s real.sh link.sh
+  printf '# r\n100\n' > .ratchet
+  git add -A && git commit -qm base
+  git update-ref refs/remotes/origin/main HEAD
+)
+RUN_OUT="$(cd "$G7" && MARKDOWN_COST_RATCHET="$G7/.ratchet" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc  "G7 ls-files lists a tracked symlink and git archive does not, so an untouched tree must not read as growth" 0 "$RUN_RC"
+hasnt "G7 a symlink target already walked once is not priced again through the link" "$RUN_OUT" "FLAG [prose-ratchet]"
+has "G7 unit 1 is the path that consults the merge base, and both walkers agree there" "$RUN_OUT" "this branch is +0 against it"
+unset MARKDOWN_COST_RATCHET
+
 echo
 [ "$fail" -eq 0 ] || exit 1
 
