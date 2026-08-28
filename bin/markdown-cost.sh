@@ -182,13 +182,14 @@ ratchet_unit() { # <file-or-stdin-text> -> the unit a ratchet was written in
 }
 
 # census_stream reads NUL-separated repo-relative paths and totals their prose.
-# Two callers feed it: the working tree via `git ls-files`, and the merge-base
-# tree extracted with `git archive`. NOT a second checkout -- creating one is a
-# violation bin/no-worktree-lint.sh exists to catch, and it caught this.
+# Every caller must hand it the same file set for a given tree, or a working
+# tree and a ref stop being comparable. NOT a second checkout -- creating one is
+# a violation bin/no-worktree-lint.sh exists to catch, and it caught this.
 census_stream() {
   local f lang n=0
   while IFS= read -r -d '' f; do
     f="${f#./}"
+    [ -L "$f" ] && continue
     [ -f "$f" ] || continue
     prose_excluded "$f" && continue
     lang="$(prose_lang "$f")"
