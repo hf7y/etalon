@@ -329,10 +329,6 @@ RUN_OUT="$(cd "$T/ratchet" && "$SCRIPT" --census 2>&1)"; RUN_RC=$?
 rc  "G4 a tree that shrank exits 0" 0 "$RUN_RC"
 has "G4 and invites locking the reduction in" "$RUN_OUT" "run --accept to lock it in"
 
-# G5/G6. The ratchet only falls, and BOTH doors are shut: --accept cannot
-# re-accept upward, and a hand edit that raises the number is rejected by
-# --census. The hand-raise used to be advertised in the FLAG itself, and was
-# taken twice on 2026-08-15 -- both times inside a PR that merged itself.
 { printf '#!/usr/bin/env bash\n'; for i in $(seq 1 90); do printf '# line %d\n' "$i"; done; } > "$T/ratchet/tool.sh"
 RUN_OUT="$(cd "$T/ratchet" && "$SCRIPT" --accept 2>&1)"; RUN_RC=$?
 rc  "G5 --accept refuses to raise the baseline" 1 "$RUN_RC"
@@ -405,7 +401,7 @@ hasnt "P2 and the 5 data-literal lines are not"       "$RUN_OUT" "8 of 13"
 
 echo "-- P(census). a docstring reap MOVES the census"
 RUN_OUT="$(cd "$T/pydoc" && MARKDOWN_COST_RATCHET="$T/pydoc/.r" "$SCRIPT" --accept 2>&1)"
-has "P3 --accept seeds and stamps the unit"          "$(cat "$T/pydoc/.r")" "# unit: 3"
+has "P3 --accept seeds and stamps the unit"          "$(cat "$T/pydoc/.r")" "# unit: 4"
 before="$(grep -v '^#' "$T/pydoc/.r" | tr -d '[:space:]')"
 printf '"""One."""\n' > "$T/pydoc/lib/essay.py"
 G "$T/pydoc" add -A; G "$T/pydoc" commit -qm reap
@@ -413,8 +409,8 @@ after="$(cd "$T/pydoc" && MARKDOWN_COST_RATCHET="$T/pydoc/.r" "$SCRIPT" --census
 has "P4 cutting a docstring lowers the count"        "$after" "below the baseline"
 
 echo "-- P(ast). the heuristic answers to Python, not to itself"
-# A hand-written scanner for a language it does not parse is a guess unless
-# something independent checks it. This pins count_py_docstrings to ast.
+# groff does for W5 what ast does here: a scanner for a language it does not
+# parse is a guess until something independent checks it.
 if command -v python3 >/dev/null 2>&1; then
   cat > "$T/ast_ref.py" <<'PY'
 import ast, sys
@@ -523,7 +519,7 @@ G "$T/unitchg" update-ref refs/remotes/origin/main main
 G "$T/unitchg" checkout -q -b work
 RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
 rc  "U1 a stale-unit baseline does not fail a branch that adds nothing" 0 "$RUN_RC"
-has "U2 it says which unit the old number was in"    "$RUN_OUT" "is unit 1, this guard measures in unit 3"
+has "U2 it says which unit the old number was in"    "$RUN_OUT" "is unit 1, this guard measures in unit 4"
 has "U3 and points at --accept to re-base"           "$RUN_OUT" "re-base"
 # ...but the branch still cannot add prose while the unit is stale
 printf '"""Doc one.\n\nDoc two.\nDoc three.\nDoc four.\n"""\n' > "$T/unitchg/lib/m.py"
@@ -533,9 +529,119 @@ rc  "U4 a stale unit does NOT excuse prose this branch adds" 1 "$RUN_RC"
 has "U5 it prices against the merge base, not the stamp"     "$RUN_OUT" "adds 2 prose line(s)"
 
 echo "-- U(accept). --accept still refuses to raise WITHIN a unit"
-printf '# markdown-cost.ratchet\n# unit: 3\n# accepted whenever\n1\n' > "$T/unitchg/.r"
+printf '# markdown-cost.ratchet\n# unit: 4\n# accepted whenever\n1\n' > "$T/unitchg/.r"
 RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --accept 2>&1)"; RUN_RC=$?
 rc  "U6 same-unit raise is still REFUSED"            1 "$RUN_RC"
 has "U7 and says so"                                 "$RUN_OUT" "REFUSED"
+
+echo "-- V. a '#' comment inside a fence is prose (unit 4)"
+# count_prose skipped fences: 27 runbook lines moved in as '#' comments cost 0.
+newrepo fenced
+FR="$T/fenced/.r"
+fcens() { rm -f "$FR"; G "$T/fenced" add -A; (cd "$T/fenced" && MARKDOWN_COST_RATCHET="$FR" "$SCRIPT" --accept 2>&1); }
+has "V0 the seeded tree holds only CHANGES.md's one line" "$(fcens)" "1 prose line(s)"
+
+blk() { # blk <path> <info-string> -- 6 '#' comments and 4 commands in one fence
+  { printf '```%s\n' "$2"
+    for i in 1 2 3 4 5 6; do printf '# the reason step %d exists at all\n' "$i"; done
+    for i in 1 2 3 4; do printf 'run --step %d\n' "$i"; done
+    printf '```\n'; } > "$1"; }
+
+mkdir -p "$T/fenced/docs"
+blk "$T/fenced/docs/a.md" ''
+has "V1 an UNTAGGED fence prices its 6 comments and none of its 4 commands" "$(fcens)" "7 prose line(s)"
+
+blk "$T/fenced/docs/a.md" 'bash'
+has "V2 a bash-tagged fence prices them the same"          "$(fcens)" "7 prose line(s)"
+
+blk "$T/fenced/docs/a.md" 'console'
+has "V3 a console-tagged fence prices nothing -- a root prompt is not prose" "$(fcens)" "1 prose line(s)"
+blk "$T/fenced/docs/a.md" 'json'
+has "V4 an unknown tag prices nothing"                 "$(fcens)" "1 prose line(s)"
+
+{ printf '```sh\n#!/usr/bin/env bash\n# one real comment\ncode\n```\n'; } > "$T/fenced/docs/a.md"
+has "V5 '#!' inside a fence is a directive, not prose -- exactly as in a .sh" "$(fcens)" "2 prose line(s)"
+
+newrepo carriers
+mkdir -p "$T/carriers/a" "$T/carriers/b" "$T/carriers/c"
+: > "$T/carriers/body"
+i=1; while [ "$i" -le 27 ]; do printf 'the migration expects the host to be quiesced, step %d\n' "$i" >> "$T/carriers/body"; i=$((i+1)); done
+cp "$T/carriers/body" "$T/carriers/a/doc.md"
+{ printf '```\n'; sed 's/^/# /' "$T/carriers/body"; printf '```\n'; } > "$T/carriers/b/doc.md"
+sed 's/^/# /' "$T/carriers/body" > "$T/carriers/c/doc.sh"
+one() { rm -f "$T/carriers/.r"; G "$T/carriers" add -A
+        (cd "$T/carriers" && MARKDOWN_COST_RATCHET="$T/carriers/.r" "$SCRIPT" --accept 2>&1) \
+          | sed -n 's/.*is now \([0-9]*\) prose.*/\1/p'; }
+rm -f "$T/carriers/b/doc.md" "$T/carriers/c/doc.sh"; as_md="$(one)"
+rm -f "$T/carriers/a/doc.md"
+{ printf '```\n'; sed 's/^/# /' "$T/carriers/body"; printf '```\n'; } > "$T/carriers/b/doc.md"; as_fence="$(one)"
+rm -f "$T/carriers/b/doc.md"; sed 's/^/# /' "$T/carriers/body" > "$T/carriers/c/doc.sh"; as_sh="$(one)"
+eq "V6 fenced '#' comments cost what the same lines cost as body prose" "$as_fence" "$as_md"
+eq "V6 and what the same lines cost in a .sh"                           "$as_sh"    "$as_md"
+
+echo "-- W. roff is a document, and used to be free (unit 4)"
+# prose_lang returned empty for an unlisted suffix: the same runbook as roff, 0.
+newrepo roff
+RR="$T/roff/.r"
+rcens() { rm -f "$RR"; G "$T/roff" add -A; (cd "$T/roff" && MARKDOWN_COST_RATCHET="$RR" "$SCRIPT" --accept 2>&1); }
+mkdir -p "$T/roff/provision"
+cat > "$T/roff/provision/runbook.1" <<'ROFF'
+.TH RUNBOOK 1
+.SH NAME
+.\" an author note, which is a control line and free
+.PP
+the host must be quiesced before the disk is detached
+.PP
+the backend seam is what makes this reversible
+'in 0
+and this one too, because ' is the other control character
+ROFF
+has "W1 roff text lines are priced and .PP/.TH/.\\\" control lines are not" "$(rcens)" "4 prose line(s)"
+
+newrepo asroff
+mkdir -p "$T/asroff/d"
+: > "$T/asroff/body"
+i=1; while [ "$i" -le 27 ]; do printf 'the runbook says to poweroff and then startvm, step %d\n' "$i" >> "$T/asroff/body"; i=$((i+1)); done
+two() { rm -f "$T/asroff/.r"; G "$T/asroff" add -A
+        (cd "$T/asroff" && MARKDOWN_COST_RATCHET="$T/asroff/.r" "$SCRIPT" --accept 2>&1) \
+          | sed -n 's/.*is now \([0-9]*\) prose.*/\1/p'; }
+cp "$T/asroff/body" "$T/asroff/d/runbook.md"; md_cost="$(two)"
+rm -f "$T/asroff/d/runbook.md"
+{ printf '.TH RUNBOOK 1\n'; while IFS= read -r l; do printf '.PP\n%s\n' "$l"; done < "$T/asroff/body"; } > "$T/asroff/d/runbook.1"
+eq "W2 rewriting the same runbook as roff does not lower the census" "$(two)" "$md_cost"
+
+# The man/ question in code: on the DIFF allowlist because cut-verb-build.sh dies
+# on a bin/<n> with no man/<n>.1; NOT exempt from the census, one `git mv` away.
+newrepo manpage
+mkdir -p "$T/manpage/man"
+{ printf '.TH VERB 1\n'; i=1; while [ "$i" -le 90 ]; do printf '.PP\nthe verb takes one argument, note %d\n' "$i"; i=$((i+1)); done; } > "$T/manpage/man/verb.1"
+lines 10 "$T/manpage/small.sh" 'echo line'
+G "$T/manpage" checkout -q -b work
+G "$T/manpage" add -A
+G "$T/manpage" commit -qm declare
+run manpage env
+rc    "W3 a new man/<verb>.1 does not fail the diff ratio -- man/* is allowlisted" 0 "$RUN_RC"
+has   "W3 and its 90 prose lines are not in the ratio's numerator"  "$RUN_OUT" "0 of 191 added line(s) are markdown"
+hasnt "W3 and it is not billed as comments in code either"          "$RUN_OUT" "FLAG [comment-ratio]"
+RUN_OUT="$(cd "$T/manpage" && MARKDOWN_COST_RATCHET="$T/manpage/.r" "$SCRIPT" --accept 2>&1)"
+has   "W3 but the census does count it -- man/ is not a free floor" "$RUN_OUT" "91 prose line(s)"
+
+newrepo roffratio
+mkdir -p "$T/roffratio/man"
+{ printf '.TH VERB 1\n'; i=1; while [ "$i" -le 200 ]; do printf '.PP\nan explanatory sentence, number %d\n' "$i"; i=$((i+1)); done; } > "$T/roffratio/man/verb.1"
+G "$T/roffratio" checkout -q -b work
+G "$T/roffratio" add -A
+G "$T/roffratio" commit -qm page
+run roffratio env
+rc    "W4 200 roff prose lines are not a comment-ratio failure" 0 "$RUN_RC"
+hasnt "W4 and raise no comment FLAG"  "$RUN_OUT" "FLAG [comment-ratio]"
+
+if command -v groff >/dev/null 2>&1; then
+  out="$(groff -man -Tutf8 -ww "$T/roffratio/man/verb.1" 2>&1)"
+  has "W5 groff renders the fixture as a man page"       "$out" "an explanatory sentence, number 200"
+  hasnt "W5 and the .PP control lines are markup, not text" "$out" ".PP"
+else
+  echo "  SKIP W5 -- no groff to check the fixtures against"
+fi
 
 summary

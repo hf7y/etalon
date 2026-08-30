@@ -51,8 +51,9 @@ md_allowlisted() { # <path> -> 0 if the allowlist covers it
   return 1
 }
 
-md_is_markdown() { # <path> -> 0 if prose_lang prices this file as markdown
-  [ "$(prose_lang "$1")" = m ]
+md_is_document() { # <path> -> 0 if this file is all prose: markdown, or roff
+  case "$(prose_lang "$1")" in m|r) return 0 ;; esac  # the ratio, never check 3
+  return 1
 }
 
 md_is_top_level() { # <path> -> 0 if the path has no directory component
@@ -60,12 +61,12 @@ md_is_top_level() { # <path> -> 0 if the path has no directory component
 }
 
 # --- what language is a file's prose written in? ------------------------------
-# ONE predicate, read by the census, the diff check and md_is_markdown, so none
+# ONE predicate, read by the census, the diff check and md_is_document, so none
 # can disagree. A trailing SCAFFOLDING suffix is not a language: a .md.template
 # is markdown waiting to be COPIED, which is how prose multiplies -- #18 found
 # a 7.5 KB one free to keep, free to copy, and worth nothing when deleted.
 # Only suffixes this estate uses; a bare foo.template is not guessed at.
-prose_lang() { # <path> -> 'h', 'j', 'm', 'p', or empty for a file we do not price
+prose_lang() { # <path> -> 'h', 'j', 'm', 'p', 'r', or empty for a file we do not price
   local f="$1"
   case "$f" in *.template|*.tmpl|*.example|*.in) f="${f%.*}" ;; esac
   case "$f" in
@@ -73,6 +74,7 @@ prose_lang() { # <path> -> 'h', 'j', 'm', 'p', or empty for a file we do not pri
     *.sh|*.bash|*.conf|*.yml|*.yaml)       printf 'h' ;;
     *.py)                                  printf 'p' ;;
     *.mjs|*.js)                            printf 'j' ;;
+    *.[1-9])                               printf 'r' ;;
     *)                                     : ;;
   esac
 }
@@ -89,14 +91,22 @@ is_comment() {
   case "$1" in
     h|p) case "$s" in '#!'*) return 1 ;; '#'*) return 0 ;; esac ;; # '#!' is a directive
     j) case "$s" in '//'*|'/*'*|'*'*) return 0 ;; esac ;;
+    # roff INVERTS it: dot-commands are markup, the text between them is prose.
+    r) case "$2" in '.'*|"'"*) return 1 ;; *) return 0 ;; esac ;;  # RAW: column 1
+  esac
+  return 1
+}
+
+# NOT console/text/json: a root prompt and a machine's own output start with '#'
+# too. An unknown tag prices nothing, so an unrecognised fence fails to FREE.
+fence_prices_comments() { # <info string> -> 0 if '#' lines in this fence are prose
+  case "${1%%[[:space:]]*}" in
+    ''|sh|bash|shell|zsh|conf|yml|yaml|py|python) return 0 ;;
   esac
   return 1
 }
 
 # --- Python docstrings are prose, and used not to be ------------------------
-# Unit 2's case, the same shape as the scaffolding gap above: wtul#73 reaped
-# module docstrings and this census never moved.
-#
 # A docstring is a triple-quoted block that BEGINS its line (so `SQL = """..."""`
 # stays data, not prose) and sits in first-statement position: start of file, or
 # after a header line ending in ':'. That pair of conditions is what separates a
@@ -160,21 +170,19 @@ RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.r
 #   1  markdown + '#' and '//' comment lines
 #   2  ...and Python docstrings (2026-08-26)
 #   3  ...and files behind a scaffolding suffix (hf7y/etalon#18)
+#   4  ...and roff, and '#' comments inside a markdown fence (2026-08-30)
 #
 # WHY THIS EXISTS AT ALL. Unit 2 raised five of six estate repos above their
-# committed floor at once (crt +3278, wtul +1933, senechal +693). The ratchet
-# only falls and --accept refuses to raise, so without this the whole estate
-# wedges: no PR passes anywhere, and the only way out is the hand edit the
-# guard is built to reject. A measurement change is not prose growth, and must
-# not be charged as it.
+# committed floor at once (crt +3278, wtul +1933, senechal +693), and the
+# ratchet only falls: without this the whole estate wedges, and the only way out
+# is the hand edit the guard is built to reject. A measurement change is not
+# prose growth and must not be charged as it.
 #
-# It is NOT an override, and it is deliberately not reachable from a repo. On a
-# unit mismatch the committed integer is never read as a floor -- it is in the
-# wrong unit and says nothing -- so the floor becomes the merge-base tree,
-# measured LIVE in the current unit. Editing the stamp in your own ratchet
-# therefore buys nothing: the branch still cannot add a line, because the
-# comparison it must pass never involved the stamped number.
-MEASURE_UNIT=3
+# It is NOT an override and is deliberately not reachable from a repo. On a unit
+# mismatch the committed integer is never read as a floor -- wrong unit, says
+# nothing -- so the floor becomes the merge-base tree, measured LIVE in the
+# current unit. Editing the stamp in your own ratchet therefore buys nothing.
+MEASURE_UNIT=4
 
 ratchet_unit() { # <file-or-stdin-text> -> the unit a ratchet was written in
   local u
@@ -212,20 +220,30 @@ census_ref() { # <ref> -> prose lines in that tree, or empty if it cannot be rea
   printf '%s' "$out"
 }
 
+# Outside a fence, everything; the fence lines are not prose. INSIDE one the
+# COMMANDS stay free and a '#' comment is priced by the same is_comment the .sh
+# path reads: free three characters inside a fence is not a rule, it is a door.
 count_prose() { # <lang> <path> -> prose line count for one file
-  if [ "$1" = m ]; then
-    # Everything outside a ``` fence. The fence lines themselves are not prose.
-    awk '/^[ \t]*```/{fence=!fence; next} {if($0~/^[ \t]*$/)next; if(!fence)n++} END{print n+0}' "$2"
-  else
-    local line s n=0
-    while IFS= read -r line || [ -n "$line" ]; do
-      s="${line#"${line%%[![:space:]]*}"}"
+  local line s n=0 fence=0 priced=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    s="${line#"${line%%[![:space:]]*}"}"
+    if [ "$1" = m ]; then
+      case "$s" in '```'*)
+        if [ "$fence" = 0 ]; then
+          fence=1; priced=0; fence_prices_comments "${s#'```'}" && priced=1
+        else fence=0; fi
+        continue ;;
+      esac
       [ -n "$s" ] || continue
-      is_comment "$1" "$line" && n=$((n + 1))
-    done < "$2"
-    [ "$1" = p ] && n=$((n + $(count_py_docstrings "$2")))
-    printf '%d' "$n"
-  fi
+      if [ "$fence" = 0 ]; then n=$((n + 1))
+      elif [ "$priced" = 1 ] && is_comment h "$line"; then n=$((n + 1)); fi
+      continue
+    fi
+    [ -n "$s" ] || continue
+    is_comment "$1" "$line" && n=$((n + 1))
+  done < "$2"
+  [ "$1" = p ] && n=$((n + $(count_py_docstrings "$2")))
+  printf '%d' "$n"
 }
 
 # Exposed so bin/tests can pin this heuristic to Python's own ast. A scanner for
@@ -415,7 +433,7 @@ while IFS=$'\t' read -r added deleted path; do
         die2 "cannot classify the diff: unparseable numstat added-count '$added' for '$path'" ;;
   esac
   total_added=$((total_added + added))
-  if md_is_markdown "$path" && ! md_allowlisted "$path"; then
+  if md_is_document "$path" && ! md_allowlisted "$path"; then
     md_added=$((md_added + added))
     md_files="$md_files $path:$added"
     case "$deleted" in ''|*[!0-9]*) deleted=0 ;; esac
@@ -448,7 +466,7 @@ while IFS= read -r line; do
       if prose_excluded "$cur_path"; then cur_lang=''
       else
         cur_lang="$(prose_lang "$cur_path")"
-        [ "$cur_lang" = m ] && cur_lang=''   # *.md is priced by the ratio above
+        case "$cur_lang" in m|r) cur_lang='' ;; esac   # priced by the ratio above
       fi
       continue ;;
     '+++ '*|'--- '*|'+++'|'@@'*|'diff --git '*|'index '*) continue ;;
@@ -511,7 +529,7 @@ rc=0
 new_root_md=''
 while IFS=$'\t' read -r _status path; do
   [ -n "${path:-}" ] || continue
-  md_is_markdown "$path" || continue
+  md_is_document "$path" || continue
   md_is_top_level "$path" || continue
   md_allowlisted "$path" && continue
   new_root_md="$new_root_md $path"
@@ -520,7 +538,7 @@ $NAMESTATUS
 EOF
 
 if [ -n "$new_root_md" ]; then
-  printf '  FLAG [new-root-document] this diff adds a new top-level *.md file:%s\n' "$new_root_md"
+  printf '  FLAG [new-root-document] this diff adds a new top-level document:%s\n' "$new_root_md"
   printf '        Editing an existing document is free. Adding another root document\n'
   printf '        is not -- put it under a directory, or fold it into one that exists.\n'
   printf '        allowlist: %s\n' "${MD_ALLOW[*]}"
