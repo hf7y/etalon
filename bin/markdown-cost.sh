@@ -51,20 +51,24 @@ md_allowlisted() { # <path> -> 0 if the allowlist covers it
   return 1
 }
 
-md_is_markdown() { # <path> -> 0 if this file is prose we price
-  case "$1" in *.md|*.markdown) return 0 ;; esac
-  return 1
+md_is_markdown() { # <path> -> 0 if prose_lang prices this file as markdown
+  [ "$(prose_lang "$1")" = m ]
 }
 
 md_is_top_level() { # <path> -> 0 if the path has no directory component
   case "$1" in */*) return 1 ;; *) return 0 ;; esac
 }
 
-# --- prose that is not markdown ----------------------------------------------
-# ONE predicate, read by both the tree census and the diff check, so the two can
-# never disagree about what a comment is. Blank lines are neither prose nor code.
-prose_lang() { # <path> -> 'h', 'j', 'm', or empty for a file we do not price
-  case "$1" in
+# --- what language is a file's prose written in? ------------------------------
+# ONE predicate, read by the census, the diff check and md_is_markdown, so none
+# can disagree. A trailing SCAFFOLDING suffix is not a language: a .md.template
+# is markdown waiting to be COPIED, which is how prose multiplies -- #18 found
+# a 7.5 KB one free to keep, free to copy, and worth nothing when deleted.
+# Only suffixes this estate uses; a bare foo.template is not guessed at.
+prose_lang() { # <path> -> 'h', 'j', 'm', 'p', or empty for a file we do not price
+  local f="$1"
+  case "$f" in *.template|*.tmpl|*.example|*.in) f="${f%.*}" ;; esac
+  case "$f" in
     *.md|*.markdown)                       printf 'm' ;;
     *.sh|*.bash|*.conf|*.yml|*.yaml)       printf 'h' ;;
     *.py)                                  printf 'p' ;;
@@ -90,12 +94,8 @@ is_comment() {
 }
 
 # --- Python docstrings are prose, and used not to be ------------------------
-# Until MEASURE_UNIT 2 a .py file was priced by its '#' comments alone, so the
-# place Python actually keeps its prose was free. wtul#73 reaped four module
-# docstrings from ~135 lines to ~45 and this guard's census did not move by one
-# line -- the reap was real and the number said nothing. A guard that prices
-# every language's comments except the one that matters for the language most
-# of this estate is written in is measuring the wrong thing.
+# Unit 2's case, the same shape as the scaffolding gap above: wtul#73 reaped
+# module docstrings and this census never moved.
 #
 # A docstring is a triple-quoted block that BEGINS its line (so `SQL = """..."""`
 # stays data, not prose) and sits in first-statement position: start of file, or
@@ -159,6 +159,7 @@ RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.r
 #
 #   1  markdown + '#' and '//' comment lines
 #   2  ...and Python docstrings (2026-08-26)
+#   3  ...and files behind a scaffolding suffix (hf7y/etalon#18)
 #
 # WHY THIS EXISTS AT ALL. Unit 2 raised five of six estate repos above their
 # committed floor at once (crt +3278, wtul +1933, senechal +693). The ratchet
@@ -173,7 +174,7 @@ RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.r
 # measured LIVE in the current unit. Editing the stamp in your own ratchet
 # therefore buys nothing: the branch still cannot add a line, because the
 # comparison it must pass never involved the stamped number.
-MEASURE_UNIT=2
+MEASURE_UNIT=3
 
 ratchet_unit() { # <file-or-stdin-text> -> the unit a ratchet was written in
   local u
