@@ -415,7 +415,7 @@ while IFS=$'\t' read -r added deleted path; do
         die2 "cannot classify the diff: unparseable numstat added-count '$added' for '$path'" ;;
   esac
   total_added=$((total_added + added))
-  if md_is_markdown "$path" && ! md_allowlisted "$path"; then
+  if md_is_markdown "$path" && ! md_allowlisted "$path" && ! prose_excluded "$path"; then
     md_added=$((md_added + added))
     md_files="$md_files $path:$added"
     case "$deleted" in ''|*[!0-9]*) deleted=0 ;; esac
