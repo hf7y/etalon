@@ -237,6 +237,28 @@ G "$T/allowman" commit -qm man
 run allowman env
 rc    "D3 anything under man/ is allowlisted" 0 "$RUN_RC"
 
+newrepo allowcanon
+mkdir -p "$T/allowcanon/canon/commands"
+lines 90 "$T/allowcanon/canon/commands/thing.md" 'vendored canonical text'
+lines 10 "$T/allowcanon/small.sh" 'echo line'
+G "$T/allowcanon" checkout -q -b work
+G "$T/allowcanon" add -A
+G "$T/allowcanon" commit -qm canon
+run allowcanon env
+rc  "D4 a top-level canon/ tree is not priced as prose"      0 "$RUN_RC"
+has "D4 and the numerator really was zero"                   "$RUN_OUT" "0 of 100 added line(s) are markdown"
+
+newrepo allownestedcanon
+mkdir -p "$T/allownestedcanon/share/canon/commands"
+lines 90 "$T/allownestedcanon/share/canon/commands/thing.md" 'vendored canonical text'
+lines 10 "$T/allownestedcanon/small.sh" 'echo line'
+G "$T/allownestedcanon" checkout -q -b work
+G "$T/allownestedcanon" add -A
+G "$T/allownestedcanon" commit -qm nestedcanon
+run allownestedcanon env
+rc  "D5 a nested share/canon/ tree is not priced as prose"   0 "$RUN_RC"
+has "D5 and the numerator really was zero"                   "$RUN_OUT" "0 of 100 added line(s) are markdown"
+
 echo "-- E. it must never answer 'found nothing' with exit 0"
 newrepo unresolvable
 G "$T/unresolvable" checkout -q -b work
