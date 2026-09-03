@@ -237,11 +237,6 @@ G "$T/allowman" commit -qm man
 run allowman env
 rc    "D3 anything under man/ is allowlisted" 0 "$RUN_RC"
 
-# D4: canon/ (at any depth) is hosted content, not authored prose -- the same
-# exemption census() and the comment-ratio check already give it. Before this
-# case, only the ratio's own denominator ever saw a canon/ path; the numerator
-# never asked prose_excluded and priced it anyway. Nested (share/canon/...) is
-# the shape hf7y/senechal actually hit, not the top-level canon/ this repo uses.
 newrepo allowcanon
 mkdir -p "$T/allowcanon/share/canon/commands"
 lines 90 "$T/allowcanon/share/canon/commands/thing.md" 'a vendored slash command'
