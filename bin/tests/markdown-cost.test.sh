@@ -237,6 +237,23 @@ G "$T/allowman" commit -qm man
 run allowman env
 rc    "D3 anything under man/ is allowlisted" 0 "$RUN_RC"
 
+# D4: research/ at any depth. A finding is prose describing a MEASUREMENT
+# (what the code does today, what it would cost to change), not a mechanism
+# the diff is claiming to have built -- the ratio's own reason for existing
+# ("the description outran it") does not apply to a diff that was never
+# supposed to carry code. Rationing it forces every finding to be padded
+# with unwanted code just to dilute the ratio, or bundled into a PR whose
+# whole point was to land before any code did (hf7y/chezz#89, #100).
+newrepo allowresearch
+mkdir -p "$T/allowresearch/research/engine"
+lines 90 "$T/allowresearch/research/engine/finding.md" 'a measured finding'
+lines 10 "$T/allowresearch/small.sh" 'echo line'
+G "$T/allowresearch" checkout -q -b work
+G "$T/allowresearch" add -A
+G "$T/allowresearch" commit -qm research
+run allowresearch env
+rc    "D4 anything under research/ is allowlisted" 0 "$RUN_RC"
+
 echo "-- E. it must never answer 'found nothing' with exit 0"
 newrepo unresolvable
 G "$T/unresolvable" checkout -q -b work
