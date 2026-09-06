@@ -83,26 +83,8 @@ prose_excluded() { # <path> -> 0 if no rule should grade this file
   return 1
 }
 
-# A file whose own header says its prose is authored, priced and reaped
-# somewhere else is not this repo's bill to pay twice. hf7y/dcp-gate-site's
-# writing-lint port carries both header shapes below on files copied wholesale
-# from musc / hf7y/secretaire, and landing that port in one PR raised the
-# census 464 lines with no local prose actually written (hf7y/dcp-gate-site#104)
-# -- the same shape as the unit-2 jump this file already has a mechanism for,
-# except the source here is another repo's tree, not this guard's own rules.
-#
-# Both conditions must hold, in the file's own leading comment block: the
-# marker AND the line naming where the real copy lives. A bare "VENDORED" in
-# a paragraph about vendoring must not exempt the file it appears in --
-# requiring both lines is cheap insurance against that, not against a file
-# that lies about being vendored, which no string match can catch anyway. A
-# header claiming this that turns out false is a code-review problem, not
-# a problem for a prose census to solve.
 VENDOR_HEADER_LINES=20
-prose_vendored_elsewhere() { # <path> -> 0 if the leading header disclaims local prose
-  # A file this guard would never price anyway (an image, a font, a .pyc) is
-  # not worth a read -- reading one as text is where a binary earns a shell
-  # "ignored null byte" warning on every single census, of every repo.
+prose_vendored_elsewhere() { # <path> -> 0 if the header names both marker and source (hf7y/dcp-gate-site#104)
   [ -n "$(prose_lang "$1")" ] || return 1
   [ -f "$1" ] || return 1
   local head

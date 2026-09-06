@@ -562,14 +562,7 @@ RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --
 rc  "U6 same-unit raise is still REFUSED"            1 "$RUN_RC"
 has "U7 and says so"                                 "$RUN_OUT" "REFUSED"
 
-echo "-- V. a vendored file is exempt from the tree census too"
-# hf7y/dcp-gate-site#104: landing a wholesale port of another repo's linter,
-# each file headed VENDORED/CANONICAL per the estate convention, raised that
-# repo's census 464 lines against a baseline --accept then refused to re-seed,
-# because the tree really was above it and reaping someone else's vendored
-# comments is not a real reap. The exemption added to prose_excluded is the
-# same shape as residue/ and canon/ (F4 above): a place prose was NOT written
-# for this repo, so this repo's own ratchet should not price it.
+echo "-- V. a vendored file is exempt from the tree census too (hf7y/dcp-gate-site#104)"
 newrepo vcensus
 mkdir -p "$T/vcensus/lib"
 { printf '#!/usr/bin/env bash\n'
@@ -579,8 +572,6 @@ mkdir -p "$T/vcensus/lib"
 G "$T/vcensus" add -A
 G "$T/vcensus" commit -qm "add own + vendored code"
 RUN_OUT="$(cd "$T/vcensus" && MARKDOWN_COST_RATCHET="$T/vcensus/.r" "$SCRIPT" --accept 2>&1)"
-# 1 line from newrepo's own CHANGES.md; the 32 header+comment lines in the
-# vendored file count for 0 -- were it priced, this would read "33".
 has "V1 --accept does not count the vendored file's comments" "$RUN_OUT" "baseline is now 1 prose line(s)"
 
 summary
