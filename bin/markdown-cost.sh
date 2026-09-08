@@ -180,7 +180,7 @@ reap_directive() { # <deficit> -- what to do about it, not just that it happened
   # Agents hitting this ratchet rewrite their own added lines until they fit.
   # That is the wrong move and it is why repos stay full of prose that outlived
   # its mechanism: the branch pays, the tree never does. Name the routine, the
-  # number, and the refusal (Zach 2026-09-07).
+  # number, and the refusal.
   printf '        RUN /reap. Delete ~%d prose line(s) from OTHER files in this tree.\n' "$(( $1 * 2 ))"
   printf '        Twice the deficit, on purpose: clearing it exactly leaves the tree\n'
   printf '        where it was. Shrinking the lines THIS branch added is not the fix --\n'
