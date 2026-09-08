@@ -237,6 +237,16 @@ G "$T/allowman" commit -qm man
 run allowman env
 rc    "D3 anything under man/ is allowlisted" 0 "$RUN_RC"
 
+newrepo allowreports
+mkdir -p "$T/allowreports/reports"
+lines 90 "$T/allowreports/reports/suite-baseline.md" 'a regenerated measurement'
+lines 10 "$T/allowreports/small.sh" 'echo line'
+G "$T/allowreports" checkout -q -b work
+G "$T/allowreports" add -A
+G "$T/allowreports" commit -qm reports
+run allowreports env
+rc    "D4 anything under reports/ is allowlisted" 0 "$RUN_RC"
+
 echo "-- E. it must never answer 'found nothing' with exit 0"
 newrepo unresolvable
 G "$T/unresolvable" checkout -q -b work
