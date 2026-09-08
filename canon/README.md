@@ -2,9 +2,18 @@
 
 Everything here is a file **another repo runs** and etalon merely holds the one
 true copy of. It is not etalon's own mechanism and not etalon's own prose, so
-`bin/markdown-cost.sh` and `bin/state-prose-lint.sh` both skip this directory:
-pricing it would charge this repo for text it must not edit, since the whole
-point is byte identity with what ships.
+`bin/state-prose-lint.sh` and two of `bin/markdown-cost.sh`'s three other
+checks -- the standing `--census` and the untracked-file warning in
+`--accept` -- skip this directory: pricing it would charge this repo for
+text it must not edit, since the whole point is byte identity with what
+ships.
+
+The one exception is deliberate: `markdown-cost.sh`'s per-PR added-markdown-
+ratio check prices new `canon/` content same as anything else, so that a
+branch dropping a large new file under `canon/` still gets the one-time
+"you're adding N lines, are you sure" toll -- landing it free the moment
+`--census` forgives it going forward is not the same question as whether it
+should have been free to land at all (hf7y/senechal#646).
 
 ## verb.sh
 

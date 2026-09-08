@@ -162,7 +162,7 @@ run newroot env
 rc  "C1 a new top-level .md exits 1 even at a low ratio" 1 "$RUN_RC"
 has "C2 it names the document"       "$RUN_OUT" "FLAG [new-root-document]"
 has "C2 by path"                     "$RUN_OUT" "PLAN-2026-08-07.md"
-has "C2 and prints the allowlist"    "$RUN_OUT" "allowlist: README.md CLAUDE.md CONTRACT.md GAPS.md man/*"
+has "C2 and prints the allowlist"    "$RUN_OUT" "allowlist: README.md CLAUDE.md CONTRACT.md GAPS.md man/* .claude/commands/* canon/README.md"
 
 # C3: editing the document that was already there is how a record stays
 # current. It must cost nothing beyond the ratio.
@@ -236,6 +236,28 @@ G "$T/allowman" add -A
 G "$T/allowman" commit -qm man
 run allowman env
 rc    "D3 anything under man/ is allowlisted" 0 "$RUN_RC"
+
+newrepo allowcanonreadme
+mkdir -p "$T/allowcanonreadme/canon"
+printf 'what canon/ is and why\n' > "$T/allowcanonreadme/canon/README.md"
+lines 90 "$T/allowcanonreadme/canon/README.md" 'how the gate works'
+lines 10 "$T/allowcanonreadme/small.sh" 'echo line'
+G "$T/allowcanonreadme" checkout -q -b work
+G "$T/allowcanonreadme" add -A
+G "$T/allowcanonreadme" commit -qm canonreadme
+run allowcanonreadme env
+rc    "D4 canon/README.md is allowlisted" 0 "$RUN_RC"
+
+newrepo notallowcanonpayload
+mkdir -p "$T/notallowcanonpayload/canon/commands"
+lines 90 "$T/notallowcanonpayload/canon/commands/thing.md" 'vendored command text'
+lines 10 "$T/notallowcanonpayload/small.sh" 'echo line'
+G "$T/notallowcanonpayload" checkout -q -b work
+G "$T/notallowcanonpayload" add -A
+G "$T/notallowcanonpayload" commit -qm canonpayload
+run notallowcanonpayload env
+rc    "D5 a vendored canon/ file (not README.md) is still priced" 1 "$RUN_RC"
+has   "D5 and FLAGs the ratio"                                     "$RUN_OUT" "FLAG [markdown-ratio]"
 
 echo "-- E. it must never answer 'found nothing' with exit 0"
 newrepo unresolvable
