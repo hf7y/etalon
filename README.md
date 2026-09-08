@@ -31,19 +31,9 @@ file and the next run has a floor.
 
 ## Why this repo exists
 
-`BUILD-DISCIPLINE.md` in hf7y/realisateur records **eleven byte-identical
-corrupted copies** of this guard, produced by hand-copying it from repo to
-repo. A later port shipped a test suite that could not run, to every repo it
-reached, because it copied the test but not the harness it sourced. Another
-shipped a ratchet with no CI step reading it.
-
-Every one of those is the same failure: **a guard that has copies has
-versions.** Zach, 2026-08-17: *"Can this guard be universal in the ecosystem
-and only maintained in one place."*
-
-So: one copy, called by reference. Changing the guard changes it everywhere at
-once. There is no port step to forget and no drift to detect, because there is
-nothing to drift from.
+**A guard that has copies has versions.** Zach, 2026-08-17: *"Can this guard be
+universal in the ecosystem and only maintained in one place."* One copy, called
+by reference: no port step to forget, no drift to detect.
 
 ## Why public
 

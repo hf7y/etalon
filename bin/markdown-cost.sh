@@ -176,6 +176,18 @@ RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.r
 # comparison it must pass never involved the stamped number.
 MEASURE_UNIT=3
 
+reap_directive() { # <deficit> -- what to do about it, not just that it happened
+  # Agents hitting this ratchet rewrite their own added lines until they fit.
+  # That is the wrong move and it is why repos stay full of prose that outlived
+  # its mechanism: the branch pays, the tree never does. Name the routine, the
+  # number, and the refusal (Zach 2026-09-07).
+  printf '        RUN /reap. Delete ~%d prose line(s) from OTHER files in this tree.\n' "$(( $1 * 2 ))"
+  printf '        Twice the deficit, on purpose: clearing it exactly leaves the tree\n'
+  printf '        where it was. Shrinking the lines THIS branch added is not the fix --\n'
+  printf '        hunt a doctrine essay half, a checklist row that argues with itself,\n'
+  printf '        or a spec for a check that no longer exists. Those lines are trash.\n'
+}
+
 ratchet_unit() { # <file-or-stdin-text> -> the unit a ratchet was written in
   local u
   u="$(printf '%s\n' "$1" | sed -n 's/^# *unit: *\([0-9][0-9]*\).*/\1/p' | head -1)"
@@ -344,7 +356,8 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
       printf '  FLAG [prose-ratchet] this branch adds %d prose line(s).\n' "$((now - base))"
       printf '        (The unit changed since %s was written, so that number is not the\n' "$RATCHET"
       printf '        floor here -- the merge-base tree is. Re-basing does not pay for\n'
-      printf '        prose this branch adds.) Reap prose elsewhere in this branch.\n'
+      printf '        prose this branch adds.)\n'
+      reap_directive "$((now - base))"
       exit 1
     fi
     printf '  ok -- adds nothing over the merge base. Run --accept to re-base %s to unit %s.\n' "$RATCHET" "$MEASURE_UNIT"
@@ -362,7 +375,8 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
       printf '  FLAG [prose-ratchet] this branch adds %d prose line(s), and the tree is\n' "$((now - base))"
       printf '        already %d over the baseline of %s.\n' "$((now - was))" "$was"
       printf '        The ratchet only falls, and raising %s is\n' "$RATCHET"
-      printf '        rejected too. Reap prose elsewhere in this branch.\n'
+      printf '        rejected too.\n'
+      reap_directive "$((now - base))"
       exit 1
     fi
     printf '  over the baseline, but not by this branch -- main drifted. Not this PR to answer for.\n'

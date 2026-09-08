@@ -531,6 +531,9 @@ G "$T/unitchg" add -A; G "$T/unitchg" commit -qm "add prose"
 RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
 rc  "U4 a stale unit does NOT excuse prose this branch adds" 1 "$RUN_RC"
 has "U5 it prices against the merge base, not the stamp"     "$RUN_OUT" "adds 2 prose line(s)"
+has "U5a it names the routine, not just the deficit"         "$RUN_OUT" "RUN /reap"
+has "U5b and asks for DOUBLE the deficit"                    "$RUN_OUT" "Delete ~4 prose line(s)"
+has "U5c and refuses the rewrite-my-own-lines move"          "$RUN_OUT" "Shrinking the lines THIS branch added is not the fix"
 
 echo "-- U(accept). --accept still refuses to raise WITHIN a unit"
 printf '# markdown-cost.ratchet\n# unit: 3\n# accepted whenever\n1\n' > "$T/unitchg/.r"
