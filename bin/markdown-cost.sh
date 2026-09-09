@@ -22,7 +22,7 @@ CLI_NAME='markdown-cost.sh'
 CLI_SUMMARY='what fraction of this branch is prose, and did it add another root document?'
 CLI_USAGE='  markdown-cost.sh            price $(git merge-base HEAD origin/main)..HEAD
   markdown-cost.sh <range>    price an explicit range, e.g. main..HEAD
-  markdown-cost.sh --census   count prose in the TREE against bin/markdown-cost.ratchet
+  markdown-cost.sh --census   count prose-bearing FILES in the TREE against bin/markdown-cost.ratchet
   markdown-cost.sh --accept   record the current tree count as the baseline
   markdown-cost.sh --count-docstrings <file.py>
                               print the docstring prose lines in one file, so
@@ -160,6 +160,7 @@ RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.r
 #   1  markdown + '#' and '//' comment lines
 #   2  ...and Python docstrings (2026-08-26)
 #   3  ...and files behind a scaffolding suffix (hf7y/etalon#18)
+#   4  PROSE-BEARING FILES, not prose lines
 #
 # WHY THIS EXISTS AT ALL. Unit 2 raised five of six estate repos above their
 # committed floor at once (crt +3278, wtul +1933, senechal +693). The ratchet
@@ -174,18 +175,26 @@ RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.r
 # measured LIVE in the current unit. Editing the stamp in your own ratchet
 # therefore buys nothing: the branch still cannot add a line, because the
 # comparison it must pass never involved the stamped number.
-MEASURE_UNIT=3
+# Unit 4 is not a widened predicate -- it is a different question, and the
+# reason is an invariant about what a unit can be paid in. A LINE count is
+# payable by rewriting your own lines, so the cheapest way to clear it is to
+# truncate a comment in a file that stays; the branch pays and the tree does
+# not, which is how a comment comes to end mid-sentence. A FILE count admits
+# only one payment: a file stops existing. Shaving is then worth exactly
+# nothing, and the guard can no longer ask for a move that damages the tree.
+# The evidence this was reversed on is in hf7y/realisateur#1142.
+MEASURE_UNIT=4
 
 reap_directive() { # <deficit> -- what to do about it, not just that it happened
-  # Agents hitting this ratchet rewrite their own added lines until they fit.
-  # That is the wrong move and it is why repos stay full of prose that outlived
-  # its mechanism: the branch pays, the tree never does. Name the routine, the
-  # number, and the refusal.
-  printf '        RUN /reap. Delete ~%d prose line(s) from OTHER files in this tree.\n' "$(( $1 * 2 ))"
-  printf '        Twice the deficit, on purpose: clearing it exactly leaves the tree\n'
-  printf '        where it was. Shrinking the lines THIS branch added is not the fix --\n'
-  printf '        hunt a doctrine essay half, a checklist row that argues with itself,\n'
-  printf '        or a spec for a check that no longer exists. Those lines are trash.\n'
+  # The only payment this unit accepts is a FILE that stops existing. Editing
+  # one buys nothing, by construction, so there is no point telling anyone to.
+  printf '        RUN /reap. Delete %d file(s) this estate no longer references.\n' "$1"
+  printf '        Not lines -- files. Shaving a comment in a file that survives moves\n'
+  printf '        this number by zero. Ask what nothing reads: a script the verb build\n'
+  printf '        ships and no crontab invokes, a doctrine page for a mechanism that was\n'
+  printf '        retired, a spec for a check that no longer exists. The find that paid\n'
+  printf '        best here was 21 files whose commit message was simply "nothing in the\n'
+  printf '        verb build reads it".\n'
 }
 
 ratchet_unit() { # <file-or-stdin-text> -> the unit a ratchet was written in
@@ -194,7 +203,8 @@ ratchet_unit() { # <file-or-stdin-text> -> the unit a ratchet was written in
   printf '%s' "${u:-1}"     # every ratchet written before the stamp is unit 1
 }
 
-# census_stream reads NUL-separated repo-relative paths and totals their prose.
+# census_stream reads NUL-separated repo-relative paths and counts how many of
+# them carry prose at all.
 # Every caller must hand it the same file set for a given tree, or a working
 # tree and a ref stop being comparable. NOT a second checkout -- creating one is
 # a violation bin/no-worktree-lint.sh exists to catch, and it caught this.
@@ -207,14 +217,18 @@ census_stream() {
     prose_excluded "$f" && continue
     lang="$(prose_lang "$f")"
     [ -n "$lang" ] || continue
-    n=$((n + $(count_prose "$lang" "$f")))
+    # ONE PER FILE, not one per line. A file either carries prose or it does
+    # not; how much it carries is not what this ratchet is for. Shaving a
+    # comment inside a file that survives moves this number by zero, which is
+    # the whole point -- see reap_directive.
+    if [ "$(count_prose "$lang" "$f")" -gt 0 ]; then n=$((n + 1)); fi
   done
   printf '%d' "$n"
 }
 
 census() { git ls-files -z | census_stream; }
 
-census_ref() { # <ref> -> prose lines in that tree, or empty if it cannot be read
+census_ref() { # <ref> -> prose-bearing files in that tree, or empty if unreadable
   local d out=''
   d="$(mktemp -d)" || return 1
   if git archive --format=tar "$1" 2>/dev/null | tar -x -C "$d" 2>/dev/null; then
@@ -270,7 +284,7 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
         prev=''
       fi
       if [ -n "$prev" ] && [ "$now" -gt "$prev" ]; then
-        printf 'markdown-cost --accept -- REFUSED. The tree is %d line(s) ABOVE the\n' "$((now - prev))" >&2
+        printf 'markdown-cost --accept -- REFUSED. The tree is %d file(s) ABOVE the\n' "$((now - prev))" >&2
         printf '  baseline of %s, and this ratchet only falls. Reap prose instead.\n' "$prev" >&2
         exit 1
       fi
@@ -291,9 +305,9 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
       printf '  therefore NOT in this baseline. census() reads `git ls-files`. Stage them\n' >&2
       printf '  and re-run --accept, or the next --census fails on this very commit.\n' >&2
     fi
-    printf '# markdown-cost.ratchet -- prose lines in this tree. SHRINKS ONLY.\n# Written by markdown-cost.sh --accept, which refuses to raise it. A hand\n# edit that raises it is rejected by --census. See bin/markdown-cost.sh.\n# unit: %s -- what was measured. A number from another unit is not a floor.\n# accepted %s\n%s\n' \
+    printf '# markdown-cost.ratchet -- prose-bearing FILES in this tree. SHRINKS ONLY.\n# Written by markdown-cost.sh --accept, which refuses to raise it. A hand\n# edit that raises it is rejected by --census. See bin/markdown-cost.sh.\n# unit: %s -- what was measured. A number from another unit is not a floor.\n# accepted %s\n%s\n' \
       "$MEASURE_UNIT" "$(date -Is)" "$now" > "$RATCHET" || die2 "cannot write $RATCHET"
-    printf 'markdown-cost --accept -- baseline is now %s prose line(s).\n' "$now"
+    printf 'markdown-cost --accept -- baseline is now %s prose-bearing file(s).\n' "$now"
     exit 0
   fi
   [ -f "$RATCHET" ] || die2 "no ratchet at $RATCHET -- run --accept to seed it. A missing baseline is not a pass."
@@ -304,10 +318,10 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
   stale_unit=0
   [ "$was_unit" = "$MEASURE_UNIT" ] || stale_unit=1
   if [ "$stale_unit" = 1 ]; then
-    printf 'markdown-cost --census -- %s prose line(s); baseline %s is unit %s, this guard measures in unit %s.\n' \
+    printf 'markdown-cost --census -- %s prose-bearing file(s); baseline %s is unit %s, this guard measures in unit %s.\n' \
       "$now" "$was" "$was_unit" "$MEASURE_UNIT"
   else
-    printf 'markdown-cost --census -- %s prose line(s), baseline %s\n' "$now" "$was"
+    printf 'markdown-cost --census -- %s prose-bearing file(s), baseline %s\n' "$now" "$was"
   fi
 
   # A branch answers for the prose IT adds, not for main moving beneath it.
@@ -353,7 +367,7 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
     fi
     printf '  merge base holds %s in unit %s; this branch is %+d against it.\n' "$base" "$MEASURE_UNIT" "$((now - base))"
     if [ "$now" -gt "$base" ]; then
-      printf '  FLAG [prose-ratchet] this branch adds %d prose line(s).\n' "$((now - base))"
+      printf '  FLAG [prose-ratchet] this branch adds %d prose-bearing file(s).\n' "$((now - base))"
       printf '        (The unit changed since %s was written, so that number is not the\n' "$RATCHET"
       printf '        floor here -- the merge-base tree is. Re-basing does not pay for\n'
       printf '        prose this branch adds.)\n'
@@ -366,13 +380,13 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
 
   if [ "$now" -gt "$was" ]; then
     if [ -z "$base" ]; then
-      printf '  FLAG [prose-ratchet] the tree gained %d prose line(s) over the baseline,\n' "$((now - was))"
+      printf '  FLAG [prose-ratchet] the tree gained %d prose-bearing file(s) over the baseline,\n' "$((now - was))"
       printf '        and there is no merge base to say whether this branch is responsible.\n'
       exit 1
     fi
     printf '  merge base holds %s; this branch is %+d against it.\n' "$base" "$((now - base))"
     if [ "$now" -gt "$base" ]; then
-      printf '  FLAG [prose-ratchet] this branch adds %d prose line(s), and the tree is\n' "$((now - base))"
+      printf '  FLAG [prose-ratchet] this branch adds %d prose-bearing file(s), and the tree is\n' "$((now - base))"
       printf '        already %d over the baseline of %s.\n' "$((now - was))" "$was"
       printf '        The ratchet only falls, and raising %s is\n' "$RATCHET"
       printf '        rejected too.\n'
@@ -381,7 +395,7 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
     fi
     printf '  over the baseline, but not by this branch -- main drifted. Not this PR to answer for.\n'
   fi
-  [ "$now" -lt "$was" ] && printf '  %d line(s) below the baseline -- run --accept to lock it in.\n' "$((was - now))"
+  [ "$now" -lt "$was" ] && printf '  %d file(s) below the baseline -- run --accept to lock it in.\n' "$((was - now))"
   printf '  ok -- at or under the baseline.\n'
   exit 0
 fi
