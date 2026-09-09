@@ -316,24 +316,54 @@ has "G1 and says a missing baseline is not a pass" "$RUN_OUT" "not a pass"
 
 RUN_OUT="$(cd "$T/ratchet" && "$SCRIPT" --accept 2>&1)"; RUN_RC=$?
 rc  "G2 --accept seeds the baseline" 0 "$RUN_RC"
-has "G2 and reports the number it recorded" "$RUN_OUT" "51 prose line(s)"
+has "G2 and reports the number it recorded" "$RUN_OUT" "2 prose-bearing file(s)"
 
-{ printf '#!/usr/bin/env bash\n'; for i in $(seq 1 90); do printf '# line %d\n' "$i"; done; } > "$T/ratchet/tool.sh"
+# G2b IS THE LOOPHOLE, and it is why unit 4 exists. Nine of realisateur's twelve
+# ratchet payments were made by shortening comments inside files that stayed:
+# 571 lines shaved, 89 comment blocks left ending mid-sentence, tree no lighter.
+# Under a line count, this next edit paid. Under unit 4 it buys exactly nothing.
+{ printf '#!/usr/bin/env bash\n'; printf '# one surviving comment\n'; } > "$T/ratchet/tool.sh"
+RUN_OUT="$(cd "$T/ratchet" && "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc  "G2b shaving 49 comment lines from a surviving file exits 0" 0 "$RUN_RC"
+has "G2b and does not move the number"  "$RUN_OUT" "2 prose-bearing file(s), baseline 2"
+hasnt "G2b so it earns no reduction to bank" "$RUN_OUT" "run --accept to lock it in"
+
+# G3. Growth is a file that did not carry prose before and does now.
+{ printf '#!/usr/bin/env bash\n'; for i in $(seq 1 50); do printf '# line %d\n' "$i"; done; } > "$T/ratchet/tool.sh"
+{ printf '#!/usr/bin/env bash\n'; printf '# a second documented tool\n'; } > "$T/ratchet/tool2.sh"
+G "$T/ratchet" add -A
 RUN_OUT="$(cd "$T/ratchet" && "$SCRIPT" --census 2>&1)"; RUN_RC=$?
 rc  "G3 a tree that grew past the baseline exits 1" 1 "$RUN_RC"
 has "G3 and FLAGs the ratchet"       "$RUN_OUT" "FLAG [prose-ratchet]"
-has "G3 and says how far it rose"    "$RUN_OUT" "gained 40 prose line(s)"
+has "G3 and says how far it rose"    "$RUN_OUT" "gained 1 prose-bearing file(s)"
 
-{ printf '#!/usr/bin/env bash\n'; for i in $(seq 1 20); do printf '# line %d\n' "$i"; done; } > "$T/ratchet/tool.sh"
+# G3b. The directive only fires where there IS a merge base to blame the branch
+# for -- and what it asks for now is a file, not a count of lines to shave off.
+G "$T/ratchet" commit -qm grew
+G "$T/ratchet" update-ref refs/remotes/origin/main HEAD~1
+RUN_OUT="$(cd "$T/ratchet" && "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc  "G3b a branch that added a prose file exits 1" 1 "$RUN_RC"
+has "G3b and asks for files, not lines" "$RUN_OUT" "Delete 1 file(s) this estate no longer references"
+hasnt "G3b and never asks for a line count again" "$RUN_OUT" "prose line(s) from OTHER files"
+G "$T/ratchet" update-ref -d refs/remotes/origin/main
+G "$T/ratchet" reset -q --soft HEAD~1
+
+# G4. And the only payment it accepts is a file that stops existing.
+rm -f "$T/ratchet/tool2.sh"; G "$T/ratchet" add -A
+rm -f "$T/ratchet/tool.sh";  G "$T/ratchet" add -A
 RUN_OUT="$(cd "$T/ratchet" && "$SCRIPT" --census 2>&1)"; RUN_RC=$?
 rc  "G4 a tree that shrank exits 0" 0 "$RUN_RC"
 has "G4 and invites locking the reduction in" "$RUN_OUT" "run --accept to lock it in"
+
+{ printf '#!/usr/bin/env bash\n'; for i in $(seq 1 50); do printf '# line %d\n' "$i"; done; } > "$T/ratchet/tool.sh"
+G "$T/ratchet" add -A
 
 # G5/G6. The ratchet only falls, and BOTH doors are shut: --accept cannot
 # re-accept upward, and a hand edit that raises the number is rejected by
 # --census. The hand-raise used to be advertised in the FLAG itself, and was
 # taken twice on 2026-08-15 -- both times inside a PR that merged itself.
-{ printf '#!/usr/bin/env bash\n'; for i in $(seq 1 90); do printf '# line %d\n' "$i"; done; } > "$T/ratchet/tool.sh"
+{ printf '#!/usr/bin/env bash\n'; printf '# a second documented tool\n'; } > "$T/ratchet/tool2.sh"
+G "$T/ratchet" add -A
 RUN_OUT="$(cd "$T/ratchet" && "$SCRIPT" --accept 2>&1)"; RUN_RC=$?
 rc  "G5 --accept refuses to raise the baseline" 1 "$RUN_RC"
 has "G5 and says so out loud"        "$RUN_OUT" "REFUSED"
@@ -405,12 +435,15 @@ hasnt "P2 and the 5 data-literal lines are not"       "$RUN_OUT" "8 of 13"
 
 echo "-- P(census). a docstring reap MOVES the census"
 RUN_OUT="$(cd "$T/pydoc" && MARKDOWN_COST_RATCHET="$T/pydoc/.r" "$SCRIPT" --accept 2>&1)"
-has "P3 --accept seeds and stamps the unit"          "$(cat "$T/pydoc/.r")" "# unit: 3"
-before="$(grep -v '^#' "$T/pydoc/.r" | tr -d '[:space:]')"
+has "P3 --accept seeds and stamps the unit"          "$(cat "$T/pydoc/.r")" "# unit: 4"
 printf '"""One."""\n' > "$T/pydoc/lib/essay.py"
 G "$T/pydoc" add -A; G "$T/pydoc" commit -qm reap
 after="$(cd "$T/pydoc" && MARKDOWN_COST_RATCHET="$T/pydoc/.r" "$SCRIPT" --census 2>&1)"
-has "P4 cutting a docstring lowers the count"        "$after" "below the baseline"
+hasnt "P4 cutting a docstring does NOT lower the count -- the file still stands" \
+                                                     "$after" "below the baseline"
+G "$T/pydoc" rm -q lib/essay.py; G "$T/pydoc" commit -qm "delete it instead"
+after="$(cd "$T/pydoc" && MARKDOWN_COST_RATCHET="$T/pydoc/.r" "$SCRIPT" --census 2>&1)"
+has "P4b deleting the file does"                     "$after" "below the baseline"
 
 echo "-- P(ast). the heuristic answers to Python, not to itself"
 # A hand-written scanner for a language it does not parse is a guess unless
@@ -476,25 +509,25 @@ else
   echo "  SKIP P5 -- no python3 to check the heuristic against"
 fi
 
-echo "-- T. a scaffolding suffix resolves to the extension underneath (unit 3)"
+echo "-- T. a scaffolding suffix resolves to the extension underneath (unit 4)"
 newrepo scaffold
 mkdir -p "$T/scaffold/examples" "$T/scaffold/docs"
 TR="$T/scaffold/.r"
 cens() { rm -f "$TR"; G "$T/scaffold" add -A; (cd "$T/scaffold" && MARKDOWN_COST_RATCHET="$TR" "$SCRIPT" --accept 2>&1); }
-has "T0 the seeded tree holds only CHANGES.md's one line" "$(cens)" "1 prose line(s)"
+has "T0 the seeded tree holds only CHANGES.md" "$(cens)" "1 prose-bearing file(s)"
 
 lines 20 "$T/scaffold/examples/cmd.md.template" 'a paragraph of the factory'
-has "T1 foo.md.template is priced as markdown"    "$(cens)" "21 prose line(s)"
+has "T1 foo.md.template is priced as markdown"    "$(cens)" "2 prose-bearing file(s)"
 
 { printf '#!/usr/bin/env bash\n'; for i in $(seq 1 5); do printf '# c %d\n' "$i"; done
   printf 'echo hi\n'; } > "$T/scaffold/examples/tool.sh.template"
-has "T2 foo.sh.template is priced as shell"       "$(cens)" "26 prose line(s)"
+has "T2 foo.sh.template is priced as shell"       "$(cens)" "3 prose-bearing file(s)"
 
 lines 9 "$T/scaffold/examples/notes.template" 'looks like prose but has no inner extension'
-has "T3 a bare foo.template is priced as nothing" "$(cens)" "26 prose line(s)"
+has "T3 a bare foo.template is priced as nothing" "$(cens)" "3 prose-bearing file(s)"
 
 lines 7 "$T/scaffold/docs/plain.md" 'an ordinary document'
-has "T4 an ordinary foo.md is unchanged"          "$(cens)" "33 prose line(s)"
+has "T4 an ordinary foo.md is unchanged"          "$(cens)" "4 prose-bearing file(s)"
 
 newrepo reaptmpl
 mkdir -p "$T/reaptmpl/examples"
@@ -523,20 +556,27 @@ G "$T/unitchg" update-ref refs/remotes/origin/main main
 G "$T/unitchg" checkout -q -b work
 RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
 rc  "U1 a stale-unit baseline does not fail a branch that adds nothing" 0 "$RUN_RC"
-has "U2 it says which unit the old number was in"    "$RUN_OUT" "is unit 1, this guard measures in unit 3"
+has "U2 it says which unit the old number was in"    "$RUN_OUT" "is unit 1, this guard measures in unit 4"
 has "U3 and points at --accept to re-base"           "$RUN_OUT" "re-base"
-# ...but the branch still cannot add prose while the unit is stale
+# ...and padding the docstring in a file that already counts buys nothing,
+# which under units 1-3 was the whole payment.
 printf '"""Doc one.\n\nDoc two.\nDoc three.\nDoc four.\n"""\n' > "$T/unitchg/lib/m.py"
+G "$T/unitchg" add -A; G "$T/unitchg" commit -qm "pad the docstring"
+RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc  "U3b padding a file that already counts is not growth" 0 "$RUN_RC"
+
+# ...but the branch still cannot add a prose FILE while the unit is stale
+printf '"""A second documented module."""\n' > "$T/unitchg/lib/n.py"
 G "$T/unitchg" add -A; G "$T/unitchg" commit -qm "add prose"
 RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
 rc  "U4 a stale unit does NOT excuse prose this branch adds" 1 "$RUN_RC"
-has "U5 it prices against the merge base, not the stamp"     "$RUN_OUT" "adds 2 prose line(s)"
+has "U5 it prices against the merge base, not the stamp"     "$RUN_OUT" "adds 1 prose-bearing file(s)"
 has "U5a it names the routine, not just the deficit"         "$RUN_OUT" "RUN /reap"
-has "U5b and asks for DOUBLE the deficit"                    "$RUN_OUT" "Delete ~4 prose line(s)"
-has "U5c and refuses the rewrite-my-own-lines move"          "$RUN_OUT" "Shrinking the lines THIS branch added is not the fix"
+has "U5b and asks for a file, not a line count"              "$RUN_OUT" "Delete 1 file(s) this estate no longer references"
+has "U5c and points at what nothing reads"                   "$RUN_OUT" "Shaving a comment in a file that survives moves"
 
 echo "-- U(accept). --accept still refuses to raise WITHIN a unit"
-printf '# markdown-cost.ratchet\n# unit: 3\n# accepted whenever\n1\n' > "$T/unitchg/.r"
+printf '# markdown-cost.ratchet\n# unit: 4\n# accepted whenever\n1\n' > "$T/unitchg/.r"
 RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --accept 2>&1)"; RUN_RC=$?
 rc  "U6 same-unit raise is still REFUSED"            1 "$RUN_RC"
 has "U7 and says so"                                 "$RUN_OUT" "REFUSED"
