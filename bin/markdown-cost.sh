@@ -160,7 +160,7 @@ RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.r
 #   1  markdown + '#' and '//' comment lines
 #   2  ...and Python docstrings (2026-08-26)
 #   3  ...and files behind a scaffolding suffix (hf7y/etalon#18)
-#   4  PROSE-BEARING FILES, not prose lines (2026-09-08)
+#   4  PROSE-BEARING FILES, not prose lines
 #
 # WHY THIS EXISTS AT ALL. Unit 2 raised five of six estate repos above their
 # committed floor at once (crt +3278, wtul +1933, senechal +693). The ratchet
@@ -175,15 +175,14 @@ RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.r
 # measured LIVE in the current unit. Editing the stamp in your own ratchet
 # therefore buys nothing: the branch still cannot add a line, because the
 # comparison it must pass never involved the stamped number.
-# Unit 4 is not a widened predicate -- it is a different question. Units 1-3
-# asked HOW MANY LINES of prose the tree holds, and the answer was payable by
-# shortening a comment in a file that stays. Nine of this repo's twelve ratchet
-# payments were exactly that: 571 lines shaved in place, 89 comment blocks left
-# ending mid-sentence, and the tree no lighter for it. The three payments that
-# mattered deleted whole files -- bashify's 21, three monkey scripts, one .md --
-# 4,456 lines, and every one of them was a file nothing referenced any more.
-# So unit 4 asks HOW MANY FILES carry prose. Shaving pays nothing. Deleting a
-# file nothing reads pays one, which is the move that has ever worked here.
+# Unit 4 is not a widened predicate -- it is a different question, and the
+# reason is an invariant about what a unit can be paid in. A LINE count is
+# payable by rewriting your own lines, so the cheapest way to clear it is to
+# truncate a comment in a file that stays; the branch pays and the tree does
+# not, which is how a comment comes to end mid-sentence. A FILE count admits
+# only one payment: a file stops existing. Shaving is then worth exactly
+# nothing, and the guard can no longer ask for a move that damages the tree.
+# The evidence this was reversed on is in hf7y/realisateur#1142.
 MEASURE_UNIT=4
 
 reap_directive() { # <deficit> -- what to do about it, not just that it happened

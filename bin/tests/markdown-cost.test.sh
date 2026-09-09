@@ -318,10 +318,9 @@ RUN_OUT="$(cd "$T/ratchet" && "$SCRIPT" --accept 2>&1)"; RUN_RC=$?
 rc  "G2 --accept seeds the baseline" 0 "$RUN_RC"
 has "G2 and reports the number it recorded" "$RUN_OUT" "2 prose-bearing file(s)"
 
-# G2b IS THE LOOPHOLE, and it is why unit 4 exists. Nine of realisateur's twelve
-# ratchet payments were made by shortening comments inside files that stayed:
-# 571 lines shaved, 89 comment blocks left ending mid-sentence, tree no lighter.
-# Under a line count, this next edit paid. Under unit 4 it buys exactly nothing.
+# G2b IS THE LOOPHOLE, and it is why unit 4 exists: under a line count the edit
+# below paid, so truncating a comment was the cheapest way to clear the ratchet
+# and the tree never got lighter for it. Under unit 4 it buys exactly nothing.
 { printf '#!/usr/bin/env bash\n'; printf '# one surviving comment\n'; } > "$T/ratchet/tool.sh"
 RUN_OUT="$(cd "$T/ratchet" && "$SCRIPT" --census 2>&1)"; RUN_RC=$?
 rc  "G2b shaving 49 comment lines from a surviving file exits 0" 0 "$RUN_RC"
