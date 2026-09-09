@@ -117,16 +117,14 @@ jobs:
             cat "${{ inputs.ratchet }}"
           fi
 
-      - name: Price the prose in this diff
-        run: |
-          MARKDOWN_COST_RATCHET="$PWD/${{ inputs.ratchet }}" \
-            bash .etalon/bin/markdown-cost.sh
-
-      # BOTH STEPS, OR THE RATCHET IS A FILE NOTHING READS. The step above
-      # prices what this PR adds; this one holds the TREE against the ratchet,
-      # which only ever falls. Shipping a ratchet without this is
-      # build-but-don't-wire with the guard as the thing not wired -- found by
-      # hf7y/ecosim reviewing its own port (hf7y/ecosim#73).
+      # THE DIFF PRICE IS GONE, and the ratchet below is the whole guard now.
+      # Pricing a branch by the share of its added lines that are prose bills a
+      # change for its own shape: a doc correction is 100% markdown by
+      # necessity, and paying that means padding a diff with code nobody asked
+      # for. It was never the binding constraint either. What remains holds the
+      # TREE against a ratchet that only falls -- shipping one without this step
+      # is build-but-don't-wire with the guard as the thing not wired (found by
+      # hf7y/ecosim reviewing its own port, hf7y/ecosim#73).
       - name: Prose ratchet -- the tree may not grow
         run: |
           MARKDOWN_COST_RATCHET="$PWD/${{ inputs.ratchet }}" \
