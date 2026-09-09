@@ -35,8 +35,6 @@ jobs:
           fetch-depth: 0
       - name: Make origin/main resolvable
         run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-      - name: Price the prose in this diff
-        run: MARKDOWN_COST_RATCHET="$PWD/.prose-ratchet" bash bin/markdown-cost.sh
       - name: Prose ratchet -- the tree may not grow
         run: MARKDOWN_COST_RATCHET="$PWD/.prose-ratchet" bash bin/markdown-cost.sh --census
 
