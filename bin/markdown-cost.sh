@@ -19,49 +19,24 @@
 set -uo pipefail
 
 CLI_NAME='markdown-cost.sh'
-CLI_SUMMARY='what fraction of this branch is prose, and did it add another root document?'
-CLI_USAGE='  markdown-cost.sh            price $(git merge-base HEAD origin/main)..HEAD
-  markdown-cost.sh <range>    price an explicit range, e.g. main..HEAD
-  markdown-cost.sh --census   count prose-bearing FILES in the TREE against bin/markdown-cost.ratchet
+CLI_SUMMARY='how many files in this tree carry prose, and is that more than the merge base?'
+CLI_USAGE='  markdown-cost.sh --census   count prose-bearing FILES in the TREE against bin/markdown-cost.ratchet
   markdown-cost.sh --accept   record the current tree count as the baseline
   markdown-cost.sh --count-docstrings <file.py>
                               print the docstring prose lines in one file, so
                               the heuristic can be checked against Python ast'
 CLI_FLAGS='--census --accept --count-docstrings'
-CLI_EXITS='  0  the diff was read and priced, and it came in under the threshold
-  1  over the markdown ratio, it adds a new top-level *.md file, or the tree
-     rose above the prose ratchet
-  2  the range could not be resolved, the diff could not be read, or a file
-     could not be classified -- NEVER "I looked and found nothing"'
+CLI_EXITS='  0  the tree was counted and it is at or under the merge base
+  1  the tree rose above the prose ratchet
+  2  the tree could not be counted or a file could not be classified --
+     NEVER "I looked and found nothing"'
 CLI_POSITIONAL=any
 . "$(dirname "${BASH_SOURCE[0]}")/lib/cli-guard.sh"
 cli_guard "$@"
 
-# --- the allowlist, in ONE place ---------------------------------------------
-# Both call sites read it here; retyping it per site is how they drift apart.
-#   [rest: vault:realisateur/guard-archaeology-20260817.md]
-MD_ALLOW=( 'README.md' 'CLAUDE.md' 'CONTRACT.md' 'GAPS.md' 'man/*' '.claude/commands/*' )
-
-md_allowlisted() { # <path> -> 0 if the allowlist covers it
-  local pat
-  for pat in "${MD_ALLOW[@]}"; do
-    # shellcheck disable=SC2254 # the pattern is meant to glob
-    case "$1" in $pat) return 0 ;; esac
-  done
-  return 1
-}
-
-md_is_markdown() { # <path> -> 0 if prose_lang prices this file as markdown
-  [ "$(prose_lang "$1")" = m ]
-}
-
-md_is_top_level() { # <path> -> 0 if the path has no directory component
-  case "$1" in */*) return 1 ;; *) return 0 ;; esac
-}
-
 # --- what language is a file's prose written in? ------------------------------
-# ONE predicate, read by the census, the diff check and md_is_markdown, so none
-# can disagree. A trailing SCAFFOLDING suffix is not a language: a .md.template
+# ONE predicate, read by the census and by count_prose, so the two cannot
+# disagree about what a file is. A trailing SCAFFOLDING suffix is not a language: a .md.template
 # is markdown waiting to be COPIED, which is how prose multiplies -- #18 found
 # a 7.5 KB one free to keep, free to copy, and worth nothing when deleted.
 # Only suffixes this estate uses; a bare foo.template is not guessed at.
@@ -130,24 +105,6 @@ count_py_docstrings() { # <path> -> docstring prose lines
 }
 
 die2() { printf '%s: %s\n' "$CLI_NAME" "$*" >&2; exit 2; }
-
-MAX_PCT="${MARKDOWN_COST_MAX_PCT:-30}"
-case "$MAX_PCT" in
-  ''|*[!0-9]*) die2 "MARKDOWN_COST_MAX_PCT must be a whole number of percent, got '$MAX_PCT'" ;;
-esac
-
-# Net lines a single markdown file may gain inside a reap without disqualifying
-# it. See the md_grew assignment for why this is not zero.
-GROW_TOL="${MARKDOWN_COST_GROW_TOL:-10}"
-case "$GROW_TOL" in
-  ''|*[!0-9]*) die2 "MARKDOWN_COST_GROW_TOL must be a whole number of lines, got '$GROW_TOL'" ;;
-esac
-
-CM_MAX_PCT="${MARKDOWN_COST_COMMENT_PCT:-60}"
-CM_FLOOR="${MARKDOWN_COST_COMMENT_FLOOR:-150}"
-case "$CM_MAX_PCT$CM_FLOOR" in
-  ''|*[!0-9]*) die2 "MARKDOWN_COST_COMMENT_PCT and _FLOOR must be whole numbers, got '$CM_MAX_PCT' and '$CM_FLOOR'" ;;
-esac
 
 # --- the census and its ratchet ----------------------------------------------
 RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.ratchet}"
@@ -400,215 +357,9 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
   exit 0
 fi
 
-# --- resolve the range -------------------------------------------------------
-[ $# -le 1 ] || die2 "takes at most one argument (a ref range), got $#"
-git rev-parse --git-dir >/dev/null 2>&1 || die2 "not inside a git repository"
-
-RANGE="${1:-}"
-if [ -z "$RANGE" ]; then
-  # The default is deliberately merge-base and not `origin/main..HEAD`: the
-  # latter also prices whatever landed on main since this branch was cut, which
-  # is somebody else's prose and not this branch's bill.
-  git rev-parse --verify -q origin/main >/dev/null 2>&1 || \
-    die2 "no origin/main to compare against -- fetch it, or pass a range explicitly"
-  BASE="$(git merge-base HEAD origin/main 2>/dev/null)" || BASE=''
-  [ -n "$BASE" ] || die2 "HEAD and origin/main have no merge base -- pass a range explicitly"
-  RANGE="$BASE..HEAD"
-fi
-
-ERR="$(mktemp)"; trap 'rm -f "$ERR"' EXIT
-
-NUMSTAT="$(git diff --numstat "$RANGE" -- 2>"$ERR")" || \
-  die2 "cannot read the diff for '$RANGE': $(tr '\n' ' ' < "$ERR")"
-NAMESTATUS="$(git diff --name-status --diff-filter=A "$RANGE" -- 2>"$ERR")" || \
-  die2 "cannot list added files for '$RANGE': $(tr '\n' ' ' < "$ERR")"
-
-# --- count -------------------------------------------------------------------
-total_added=0
-md_added=0
-md_deleted=0
-md_grew=''
-md_files=''
-binary_files=''
-
-while IFS=$'\t' read -r added deleted path; do
-  [ -n "${path:-}" ] || continue
-  case "$added" in
-    -)  # A binary file has no line count. It is classifiable (not markdown)
-        # but not countable, so it contributes nothing and is reported by name
-        # rather than silently folded into the denominator.
-        binary_files="$binary_files $path"
-        continue ;;
-    ''|*[!0-9]*)
-        die2 "cannot classify the diff: unparseable numstat added-count '$added' for '$path'" ;;
-  esac
-  total_added=$((total_added + added))
-  if md_is_markdown "$path" && ! md_allowlisted "$path"; then
-    md_added=$((md_added + added))
-    md_files="$md_files $path:$added"
-    case "$deleted" in ''|*[!0-9]*) deleted=0 ;; esac
-    md_deleted=$((md_deleted + deleted))
-    # PER FILE, not just in total: a file that GREW is named here even when
-    # some other file shrank by more. Repo-wide netting alone let a 300-line
-    # delete of an obsolete doc launder a brand-new 250-line essay through as
-    #   [rest: vault:realisateur/guard-archaeology-20260817.md]
-    [ "$((added - deleted))" -gt "$GROW_TOL" ] && md_grew="$md_grew $path:+$((added - deleted))"
-  fi
-done <<EOF
-$NUMSTAT
-EOF
-
-# --- added comment lines, in files that are not markdown ---------------------
-# The ratio above cannot see these: to it a 400-line header added to a shell
-# script is 400 lines of code. Read from the patch, not numstat, which knows how
-#   [rest: vault:realisateur/guard-archaeology-20260817.md]
-cm_added=0; cm_deleted=0; cm_total=0; cm_files=''
-cur_lang=''; cur_n=0; cur_path=''
-flush_cm() {
-  [ -n "$cur_path" ] && [ "$cur_n" -gt 0 ] && cm_files="$cm_files $cur_path:$cur_n"
-  cur_n=0
-}
-while IFS= read -r line; do
-  case "$line" in
-    '+++ b/'*)
-      flush_cm
-      cur_path="${line#+++ b/}"
-      if prose_excluded "$cur_path"; then cur_lang=''
-      else
-        cur_lang="$(prose_lang "$cur_path")"
-        [ "$cur_lang" = m ] && cur_lang=''   # *.md is priced by the ratio above
-      fi
-      continue ;;
-    '+++ '*|'--- '*|'+++'|'@@'*|'diff --git '*|'index '*) continue ;;
-  esac
-  [ -n "$cur_lang" ] || continue
-  case "$line" in
-    '-'*)
-      # Deletions are counted for ONE purpose: telling a reap from a cost.
-      # They never enter cm_total, so the ratio below is still over ADDED
-      # lines only and the threshold keeps exactly its original meaning.
-      d="${line#-}"
-      ds="${d#"${d%%[![:space:]]*}"}"
-      [ -n "$ds" ] || continue
-      is_comment "$cur_lang" "$d" && cm_deleted=$((cm_deleted + 1))
-      continue ;;
-    '+'*) ;;
-    *) continue ;;
-  esac
-  line="${line#+}"
-  s="${line#"${line%%[![:space:]]*}"}"
-  [ -n "$s" ] || continue          # blanks count as neither, both sides
-  cm_total=$((cm_total + 1))
-  if is_comment "$cur_lang" "$line"; then
-    cm_added=$((cm_added + 1)); cur_n=$((cur_n + 1))
-  fi
-done < <(git diff --unified=0 "$RANGE" -- 2>/dev/null)
-flush_cm
-
-# --- Python docstrings, added ------------------------------------------------
-# Deliberately NOT read from the patch. A docstring is only distinguishable from
-# a triple-quoted data literal by what precedes it, and `--unified=0` hunks omit
-# exactly those lines -- a patch-side scanner would have to guess, and would
-# guess differently on each side of a rename. So each changed .py file is
-# measured WHOLE on both ends of the range and the difference is the bill. Files
-# added by the range have no left side; `git show` fails and the left is 0.
-ds_added=0
-while IFS= read -r dpath; do
-  [ -n "$dpath" ] || continue
-  prose_excluded "$dpath" && continue
-  case "$dpath" in *.py) ;; *) continue ;; esac
-  l=0; r=0
-  lt="$(mktemp)"; rt="$(mktemp)"
-  git show "${RANGE%%..*}:$dpath" >"$lt" 2>/dev/null && l="$(count_py_docstrings "$lt")"
-  git show "${RANGE##*..}:$dpath" >"$rt" 2>/dev/null && r="$(count_py_docstrings "$rt")"
-  rm -f "$lt" "$rt"
-  [ "$r" -gt "$l" ] && ds_added=$((ds_added + r - l))
-done < <(git diff --name-only "$RANGE" -- 2>/dev/null)
-# cm_added only. Those lines already came through the patch as added non-blank
-# lines and are in cm_total; is_comment just could not see they were prose. This
-# RECLASSIFIES them, and adding to the denominator too would bill them twice.
-[ "$ds_added" -gt 0 ] && cm_added=$((cm_added + ds_added))
-
-# --- report ------------------------------------------------------------------
-printf 'markdown-cost -- %s\n' "$RANGE"
-[ -z "$binary_files" ] || printf '  note: binary file(s) not line-counted:%s\n' "$binary_files"
-
-rc=0
-
-# 1. new top-level documents
-new_root_md=''
-while IFS=$'\t' read -r _status path; do
-  [ -n "${path:-}" ] || continue
-  md_is_markdown "$path" || continue
-  md_is_top_level "$path" || continue
-  md_allowlisted "$path" && continue
-  new_root_md="$new_root_md $path"
-done <<EOF
-$NAMESTATUS
-EOF
-
-if [ -n "$new_root_md" ]; then
-  printf '  FLAG [new-root-document] this diff adds a new top-level *.md file:%s\n' "$new_root_md"
-  printf '        Editing an existing document is free. Adding another root document\n'
-  printf '        is not -- put it under a directory, or fold it into one that exists.\n'
-  printf '        allowlist: %s\n' "${MD_ALLOW[*]}"
-  rc=1
-fi
-
-# 2. the ratio
-if [ "$total_added" -eq 0 ]; then
-  # NOT a pass-by-silence: say plainly that there was nothing to price, so this
-  # line can never be read as "the prose was checked and was fine".
-  printf '  0 added line(s) in this range -- nothing to price.\n'
-else
-  pct=$(( md_added * 100 / total_added ))
-  printf '  %d of %d added line(s) are markdown -- %d%% (threshold %d%%)\n' \
-    "$md_added" "$total_added" "$pct" "$MAX_PCT"
-  if [ "$md_deleted" -ge "$md_added" ] && [ "$md_added" -gt 0 ] && [ -z "$md_grew" ]; then
-    # A REAP IS NOT A COST. This guard prices ADDED prose, which makes any
-    # markdown-only diff 100% markdown -- including one that deletes far more
-    # than it adds. So it flagged hf7y/realisateur#231, a pass that removed 330
-    #   [rest: vault:realisateur/guard-archaeology-20260817.md]
-    printf '  net prose: -%d line(s) (added %d, deleted %d) -- a reap, not a cost.\n' \
-      "$((md_deleted - md_added))" "$md_added" "$md_deleted"
-  elif [ $(( md_added * 100 )) -gt $(( MAX_PCT * total_added )) ]; then
-    printf '  FLAG [markdown-ratio] %d%% of the added lines are prose, over the %d%% threshold.\n' \
-      "$pct" "$MAX_PCT"
-    [ -n "$md_grew" ] && { printf '        these grew, so this is not a reap (path:+net):\n'
-      for f in $md_grew; do printf '          %s\n' "$f"; done; }
-    printf '        contributing file(s) (path:added-lines):\n'
-    for f in $md_files; do printf '          %s\n' "$f"; done
-    printf '        Prose that describes mechanism is cheaper than the mechanism.\n'
-    printf '        Either the mechanism is missing, or the description outran it.\n'
-    rc=1
-  fi
-fi
-
-# 3. comments added to files that are not markdown
-if [ "$cm_total" -gt 0 ]; then
-  cm_pct=$(( cm_added * 100 / cm_total ))
-  printf '  %d of %d added non-markdown line(s) are comments -- %d%% (flags at %d%% and %d lines)\n' \
-    "$cm_added" "$cm_total" "$cm_pct" "$CM_MAX_PCT" "$CM_FLOOR"
-  if [ "$cm_deleted" -ge "$cm_added" ] && [ "$cm_added" -gt 0 ]; then
-    # A REAP IS NOT A COST -- the exemption the markdown ratio above has
-    # carried since #231, applied to the axis it was missing on. This check
-    # prices ADDED comment lines, so a pass that deletes 4795 lines of header
-    # essay and puts back 318 lines of TRAP statement scores 74% comments and
-    # FLAGS: the guard taxing the exact behaviour it exists to produce. #287
-    # fixed this for markdown and left check 3 asymmetric.
-    printf '  net comments: -%d line(s) (added %d, deleted %d) -- a reap, not a cost.\n' \
-      "$((cm_deleted - cm_added))" "$cm_added" "$cm_deleted"
-  elif [ "$cm_added" -ge "$CM_FLOOR" ] && [ $(( cm_added * 100 )) -ge $(( CM_MAX_PCT * cm_total )) ]; then
-    printf '  FLAG [comment-ratio] this diff adds %d comment line(s) at %d%% of its non-markdown lines.\n' \
-      "$cm_added" "$cm_pct"
-    printf '        contributing file(s) (path:added-comment-lines):\n'
-    for f in $cm_files; do printf '          %s\n' "$f"; done
-    printf '        A header explaining a script is prose, and it is not free because\n'
-    printf '        it lives in a .sh. Both conditions must hold: dense is allowed, and\n'
-    printf '        bulk is allowed, but not both at once.\n'
-    rc=1
-  fi
-fi
-
-[ "$rc" -eq 0 ] && printf '  ok -- priced, and under the threshold.\n'
-exit "$rc"
+# NO MODE IS NOT A PASS. The diff-price half used to live here, so every caller
+# that still runs this with no arguments -- a consumer whose workflow was not
+# updated, a habit, a script -- would otherwise fall off the end at 0 and read
+# as "priced it, nothing wrong". That is the one bug this file's header says it
+# must not have. Say what happened and exit 2.
+die2 "no mode given. This prices a TREE, not a range: pass --census (or --accept to seed a baseline). The diff price was removed -- a branch is no longer billed for the share of its added lines that are prose."

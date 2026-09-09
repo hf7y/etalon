@@ -36,272 +36,24 @@ run() { local r="$1"; shift; RUN_OUT="$(cd "$T/$r" && "$@" "$SCRIPT" main..HEAD 
 
 echo "markdown-cost.test.sh"
 
-echo "-- A. a code-only diff is free"
-newrepo codeonly
-lines 40 "$T/codeonly/feature.sh" 'echo line'
-G "$T/codeonly" checkout -q -b work
-G "$T/codeonly" add -A
-G "$T/codeonly" commit -qm feature
-run codeonly env
-rc   "A1 a code-only diff exits 0"            0 "$RUN_RC"
-has  "A2 it reports the ratio it measured"    "$RUN_OUT" "0 of 40 added line(s) are markdown -- 0%"
-hasnt "A2 and raises no FLAG"                 "$RUN_OUT" "FLAG ["
-
-echo "-- B. a prose-heavy diff is not"
-newrepo prosey
-mkdir -p "$T/prosey/docs"
-lines 90 "$T/prosey/docs/essay.md" 'a paragraph about the system'
-lines 10 "$T/prosey/small.sh" 'echo line'
-G "$T/prosey" checkout -q -b work
-G "$T/prosey" add -A
-G "$T/prosey" commit -qm prose
-run prosey env
-rc  "B1 a 90%-prose diff exits 1"             1 "$RUN_RC"
-has "B2 it names the ratio and threshold"     "$RUN_OUT" "90 of 100 added line(s) are markdown -- 90% (threshold 30%)"
-has "B2 it FLAGs the ratio"                   "$RUN_OUT" "FLAG [markdown-ratio]"
-has "B3 it names the file that cost it"       "$RUN_OUT" "docs/essay.md:90"
-
-run prosey env MARKDOWN_COST_MAX_PCT=95
-rc  "B4 a higher threshold from the env passes the same diff" 0 "$RUN_RC"
-has "B4 and the report states the threshold it used"          "$RUN_OUT" "threshold 95%"
-
-# Deletions are free: reaping prose is the behaviour we want, not the one we
-# tax. A commit that ONLY removes markdown must not be billed for it.
-newrepo reaper
-lines 60 "$T/reaper/CHANGES.md" 'an old paragraph'
-G "$T/reaper" add -A
-G "$T/reaper" commit -qm grow
-G "$T/reaper" checkout -q -b work
-: > "$T/reaper/CHANGES.md"          # 60 markdown lines deleted, none added
-lines 10 "$T/reaper/reaped.sh" 'echo line'
-G "$T/reaper" add -A
-G "$T/reaper" commit -qm reap
-run reaper env
-rc  "B5 deleting 60 lines of prose is free"  0 "$RUN_RC"
-has "B5 the deletions are not in the count"  "$RUN_OUT" "0 of 10 added line(s) are markdown"
-
-# B6: THE REWRITE-AS-REAP. B5 only covers a diff that adds NO prose. A real
-# reap replaces a long stale passage with a short correct one, so it is
-# markdown-only and therefore 100% markdown -- over any threshold, forever.
-#   [rest: vault:realisateur/guard-archaeology-20260817.md]
-newrepo rewriter
-lines 200 "$T/rewriter/DOC.md" 'a long stale passage about a retired mechanism'
-G "$T/rewriter" add -A
-G "$T/rewriter" commit -qm grow
-G "$T/rewriter" checkout -q -b work
-lines 40 "$T/rewriter/DOC.md" 'the short correct replacement'
-G "$T/rewriter" add -A
-G "$T/rewriter" commit -qm reap
-run rewriter env
-rc  "B6 a markdown-only rewrite that nets NEGATIVE passes"  0 "$RUN_RC"
-has "B6 and it is reported as a reap, with the net"         "$RUN_OUT" "net prose: -160 line(s)"
-hasnt "B6 and raises no ratio FLAG"                         "$RUN_OUT" "FLAG [markdown-ratio]"
-
-# B6b: THE PRODUCER FIX (#287). #187 makes a reap incomplete until it also
-# repoints the command file that WROTE the surface being deleted, and that
-# edit adds a net line or two. Under a one-line "grew" trigger the mandatory
-#   [rest: vault:realisateur/guard-archaeology-20260817.md]
-newrepo producer
-mkdir -p "$T/producer/.claude/commands"
-lines 200 "$T/producer/DOC.md" 'a retired prose surface'
-lines 10 "$T/producer/.claude/commands/nightly.md" 'write DOC.md every night'
-G "$T/producer" add -A
-G "$T/producer" commit -qm seed
-G "$T/producer" checkout -q -b work
-lines 5 "$T/producer/DOC.md" 'see the issue tracker'
-lines 12 "$T/producer/.claude/commands/nightly.md" 'file an issue every night'
-G "$T/producer" add -A
-G "$T/producer" commit -qm reap
-run producer env
-rc  "B6b a reap whose producer fix nets +2 still passes" 0 "$RUN_RC"
-has "B6b and is reported as a reap"  "$RUN_OUT" "a reap, not a cost."
-
-# The exemption is self-limiting: prose that GROWS still pays, even though
-# this diff also deletes. Otherwise "delete a line, add a hundred" would buy
-# an exemption, which is the same dodge inverted.
-newrepo grower
-lines 20 "$T/grower/DOC.md" 'a short passage'
-G "$T/grower" add -A
-G "$T/grower" commit -qm seed
-G "$T/grower" checkout -q -b work
-lines 150 "$T/grower/DOC.md" 'a much longer passage that replaced it'
-G "$T/grower" add -A
-G "$T/grower" commit -qm grow
-run grower env
-rc  "B7 a markdown-only rewrite that nets POSITIVE still exits 1" 1 "$RUN_RC"
-has "B7 and still FLAGs the ratio"  "$RUN_OUT" "FLAG [markdown-ratio]"
-
-# B8: THE LAUNDERING CASE. Netting repo-wide is not enough on its own --
-# deleting one obsolete document buys room for a brand-new essay somewhere
-# else, and the total still reads negative. Found by fixture against the
-# exemption's own first version, before it had shipped a week. So the test is
-# per FILE as well as in total: no markdown file may grow.
-newrepo launderer
-mkdir -p "$T/launderer/docs"
-lines 300 "$T/launderer/docs/OLD.md" 'an obsolete paragraph'
-G "$T/launderer" add -A
-G "$T/launderer" commit -qm seed
-G "$T/launderer" checkout -q -b work
-rm "$T/launderer/docs/OLD.md"
-lines 250 "$T/launderer/docs/NEW.md" 'a brand new essay line'
-G "$T/launderer" add -A
-G "$T/launderer" commit -qm launder
-run launderer env
-rc  "B8 a big delete does NOT buy a big new document elsewhere" 1 "$RUN_RC"
-has "B8 and the grown file is named"  "$RUN_OUT" "docs/NEW.md:+250"
-has "B8 and it says why this is not a reap"  "$RUN_OUT" "these grew, so this is not a reap"
-
-echo "-- C. a new top-level document"
-newrepo newroot
-lines 50 "$T/newroot/big.sh" 'echo line'
-printf 'a brand new root document\n' > "$T/newroot/PLAN-2026-08-07.md"
-G "$T/newroot" checkout -q -b work
-G "$T/newroot" add -A
-G "$T/newroot" commit -qm addroot
-run newroot env
-rc  "C1 a new top-level .md exits 1 even at a low ratio" 1 "$RUN_RC"
-has "C2 it names the document"       "$RUN_OUT" "FLAG [new-root-document]"
-has "C2 by path"                     "$RUN_OUT" "PLAN-2026-08-07.md"
-has "C2 and prints the allowlist"    "$RUN_OUT" "allowlist: README.md CLAUDE.md CONTRACT.md GAPS.md man/*"
-
-# C3: editing the document that was already there is how a record stays
-# current. It must cost nothing beyond the ratio.
-newrepo editroot
-G "$T/editroot" checkout -q -b work
-printf 'one more line\n' >> "$T/editroot/CHANGES.md"
-lines 50 "$T/editroot/more.sh" 'echo line'
-G "$T/editroot" add -A
-G "$T/editroot" commit -qm edit
-run editroot env
-rc    "C3 EDITING an existing top-level .md exits 0" 0 "$RUN_RC"
-hasnt "C3 and is not a new root document"            "$RUN_OUT" "FLAG [new-root-document]"
-
-# C4: a new .md inside a directory is a document with a home. Only the ROOT is
-# rationed.
-newrepo nesteddoc
-mkdir -p "$T/nesteddoc/notes"
-printf 'a nested note\n' > "$T/nesteddoc/notes/thing.md"
-lines 50 "$T/nesteddoc/more.sh" 'echo line'
-G "$T/nesteddoc" checkout -q -b work
-G "$T/nesteddoc" add -A
-G "$T/nesteddoc" commit -qm nested
-run nesteddoc env
-rc    "C4 a new .md under a directory exits 0" 0 "$RUN_RC"
-hasnt "C4 and is not a new root document"      "$RUN_OUT" "FLAG [new-root-document]"
-
-echo "-- D. the allowlist (one list, both checks)"
-# D1: CLAUDE.md is the project's own front door. Adding it must not be
-# rationed -- this is the new-root-document call site reading the allowlist.
-newrepo allowroot
-printf 'project instructions\n' > "$T/allowroot/CLAUDE.md"
-lines 50 "$T/allowroot/more.sh" 'echo line'
-G "$T/allowroot" checkout -q -b work
-G "$T/allowroot" add -A
-G "$T/allowroot" commit -qm claude
-run allowroot env
-rc    "D1 a NEW allowlisted root document exits 0" 0 "$RUN_RC"
-hasnt "D1 and raises no FLAG at all"               "$RUN_OUT" "FLAG ["
-
-# D1b: the skeleton writes both; flagging them strands conversions (gardien#59)
-newrepo allowskel
-printf 'the contract\n' > "$T/allowskel/CONTRACT.md"
-printf 'the gaps\n' > "$T/allowskel/GAPS.md"
-lines 50 "$T/allowskel/more.sh" 'echo line'
-G "$T/allowskel" checkout -q -b work
-G "$T/allowskel" add -A
-G "$T/allowskel" commit -qm skeleton
-run allowskel env
-rc    "D1b the skeleton's own root documents exit 0" 0 "$RUN_RC"
-hasnt "D1b and raise no new-root-document FLAG" "$RUN_OUT" "FLAG [new-root-document]"
-
-# D2: the ratio's call site reads the SAME list. 90 lines of README.md would be
-# a 90% prose diff if the allowlist were only consulted by the other check.
-newrepo allowratio
-G "$T/allowratio" checkout -q -b work
-lines 90 "$T/allowratio/README.md" 'how to use this'
-lines 10 "$T/allowratio/small.sh" 'echo line'
-G "$T/allowratio" add -A
-G "$T/allowratio" commit -qm readme
-run allowratio env
-rc    "D2 90 lines of README.md are not priced as prose" 0 "$RUN_RC"
-has   "D2 and the numerator really was zero"             "$RUN_OUT" "0 of 100 added line(s) are markdown"
-
-# D3: man/ at any depth.
-newrepo allowman
-mkdir -p "$T/allowman/man/verbs"
-lines 90 "$T/allowman/man/verbs/thing.md" 'the manual page'
-lines 10 "$T/allowman/small.sh" 'echo line'
-G "$T/allowman" checkout -q -b work
-G "$T/allowman" add -A
-G "$T/allowman" commit -qm man
-run allowman env
-rc    "D3 anything under man/ is allowlisted" 0 "$RUN_RC"
-
 echo "-- E. it must never answer 'found nothing' with exit 0"
+# The diff-price half used to live at the bottom of the script, so a caller that
+# still passes a range -- or nothing at all -- would fall off the end at 0 and
+# read as "priced it, nothing wrong". That is the one bug this guard's header
+# forbids, and removing a leg is exactly when it gets introduced.
 newrepo unresolvable
-G "$T/unresolvable" checkout -q -b work
-printf 'echo x\n' >> "$T/unresolvable/base.sh"
-G "$T/unresolvable" add -A
-G "$T/unresolvable" commit -qm x
-RUN_OUT="$(cd "$T/unresolvable" && "$SCRIPT" no-such-ref..HEAD 2>&1)"; RUN_RC=$?
-rc  "E1 an unresolvable range exits 2, not 0" 2 "$RUN_RC"
-has "E2 and says which range it could not read" "$RUN_OUT" "cannot read the diff for 'no-such-ref..HEAD'"
+RUN_OUT="$(cd "$T/unresolvable" && "$SCRIPT" 2>&1)"; RUN_RC=$?
+rc  "E1 no mode exits 2, not 0" 2 "$RUN_RC"
+has "E1 and names the mode it wanted"     "$RUN_OUT" "pass --census"
+has "E1 and says the diff price is gone"  "$RUN_OUT" "The diff price was removed"
+
+RUN_OUT="$(cd "$T/unresolvable" && "$SCRIPT" main..HEAD 2>&1)"; RUN_RC=$?
+rc  "E2 a range argument is no longer a mode, and exits 2" 2 "$RUN_RC"
+has "E2 and says this prices a tree"      "$RUN_OUT" "prices a TREE, not a range"
 
 mkdir -p "$T/notarepo"
-RUN_OUT="$(cd "$T/notarepo" && "$SCRIPT" 2>&1)"; RUN_RC=$?
+RUN_OUT="$(cd "$T/notarepo" && "$SCRIPT" --census 2>&1)"; RUN_RC=$?
 rc  "E3 outside a git repository exits 2" 2 "$RUN_RC"
-has "E3 and says so"                      "$RUN_OUT" "not inside a git repository"
-
-RUN_OUT="$(cd "$T/unresolvable" && MARKDOWN_COST_MAX_PCT=lots "$SCRIPT" main..HEAD 2>&1)"; RUN_RC=$?
-rc  "E4 a non-numeric threshold exits 2, not silently 30%" 2 "$RUN_RC"
-has "E4 and names the value it rejected"                   "$RUN_OUT" "got 'lots'"
-
-RUN_OUT="$(cd "$T/unresolvable" && "$SCRIPT" main..HEAD extra 2>&1)"; RUN_RC=$?
-rc  "E5 a second positional argument exits 2" 2 "$RUN_RC"
-
-echo "-- F. comments in files that are not markdown"
-
-newrepo commenter
-G "$T/commenter" checkout -q -b work
-{ printf '#!/usr/bin/env bash\n'
-  for i in $(seq 1 200); do printf '# an explanatory line number %d\n' "$i"; done
-  for i in $(seq 1 10); do printf 'code_%d=1\n' "$i"; done; } > "$T/commenter/tool.sh"
-G "$T/commenter" add -A
-G "$T/commenter" commit -qm header
-run commenter env
-rc  "F1 200 comment lines at 95% of a .sh exits 1"  1 "$RUN_RC"
-has "F1 and FLAGs the comment ratio"  "$RUN_OUT" "FLAG [comment-ratio]"
-has "F1 and names the file"           "$RUN_OUT" "tool.sh:200"
-hasnt "F1 and does NOT call it a markdown-ratio problem" "$RUN_OUT" "FLAG [markdown-ratio]"
-
-newrepo diluted
-G "$T/diluted" checkout -q -b work
-{ printf '#!/usr/bin/env bash\n'
-  for i in $(seq 1 200); do printf '# an explanatory line number %d\n' "$i"; done
-  for i in $(seq 1 400); do printf 'code_%d=1\n' "$i"; done; } > "$T/diluted/tool.sh"
-G "$T/diluted" add -A
-G "$T/diluted" commit -qm mostly-code
-run diluted env
-rc  "F2 the same 200 comment lines at 33% exits 0"  0 "$RUN_RC"
-hasnt "F2 and raises no comment FLAG"  "$RUN_OUT" "FLAG [comment-ratio]"
-
-newrepo dense
-G "$T/dense" checkout -q -b work
-{ for i in $(seq 1 60); do printf '# setting %d\n' "$i"; done; } > "$T/dense/x.conf"
-G "$T/dense" add -A
-G "$T/dense" commit -qm small
-run dense env
-rc  "F3 60 comment lines at 100% is under the floor, exits 0" 0 "$RUN_RC"
-
-newrepo museum
-G "$T/museum" checkout -q -b work
-mkdir -p "$T/museum/residue"
-{ printf '#!/usr/bin/env bash\n'
-  for i in $(seq 1 200); do printf '# a retired explanation %d\n' "$i"; done; } > "$T/museum/residue/old.sh"
-G "$T/museum" add -A
-G "$T/museum" commit -qm retired
-run museum env
-rc  "F4 the same header under residue/ exits 0" 0 "$RUN_RC"
 
 echo "-- G. the tree ratchet"
 
@@ -402,7 +154,7 @@ unset MARKDOWN_COST_RATCHET
 echo
 [ "$fail" -eq 0 ] || exit 1
 
-echo "-- P. Python docstrings are prose (MEASURE_UNIT 2)"
+echo "-- P. Python docstrings are prose (since MEASURE_UNIT 2)"
 # The bug this suite exists to keep fixed: until unit 2 a .py file was priced by
 # its '#' comments alone, so wtul#73 could cut four module docstrings from ~135
 # lines to ~45 and move the census by zero. See markdown-cost.sh's
@@ -428,10 +180,6 @@ PY
 G "$T/pydoc" checkout -q -b work
 G "$T/pydoc" add -A
 G "$T/pydoc" commit -qm docstrings
-run pydoc env
-has "P1 the 3 docstring lines are billed as comments" "$RUN_OUT" "3 of 13 added non-markdown line(s) are comments"
-hasnt "P2 and the 5 data-literal lines are not"       "$RUN_OUT" "8 of 13"
-
 echo "-- P(census). a docstring reap MOVES the census"
 RUN_OUT="$(cd "$T/pydoc" && MARKDOWN_COST_RATCHET="$T/pydoc/.r" "$SCRIPT" --accept 2>&1)"
 has "P3 --accept seeds and stamps the unit"          "$(cat "$T/pydoc/.r")" "# unit: 4"
@@ -528,20 +276,23 @@ has "T3 a bare foo.template is priced as nothing" "$(cens)" "3 prose-bearing fil
 lines 7 "$T/scaffold/docs/plain.md" 'an ordinary document'
 has "T4 an ordinary foo.md is unchanged"          "$(cens)" "4 prose-bearing file(s)"
 
+# T5. The point of pricing a scaffolding suffix is that removing one PAYS --
+# a .md.template is markdown waiting to be copied, which is how prose multiplies.
 newrepo reaptmpl
 mkdir -p "$T/reaptmpl/examples"
 lines 145 "$T/reaptmpl/examples/nightly.md.template" 'a line of the duplication factory'
 G "$T/reaptmpl" add -A
 G "$T/reaptmpl" commit -qm factory
-G "$T/reaptmpl" checkout -q -b work
-rm "$T/reaptmpl/examples/nightly.md.template"
+TR5="$T/reaptmpl/.r"
+RUN_OUT="$(cd "$T/reaptmpl" && MARKDOWN_COST_RATCHET="$TR5" "$SCRIPT" --accept 2>&1)"
+has "T5 the template is counted while it exists" "$RUN_OUT" "2 prose-bearing file(s)"
+
+G "$T/reaptmpl" rm -q examples/nightly.md.template
 printf 'existing document\nheader 1\nheader 2\nheader 3\nheader 4\n' > "$T/reaptmpl/CHANGES.md"
 G "$T/reaptmpl" add -A
-G "$T/reaptmpl" commit -qm reap
-run reaptmpl env
-rc  "T5 deleting a .md.template while adding 4 prose lines exits 0" 0 "$RUN_RC"
-has "T5 and the 145 deleted template lines are credited" "$RUN_OUT" "a reap, not a cost"
-has "T5 and the deletion is counted, not ignored"        "$RUN_OUT" "deleted 145"
+RUN_OUT="$(cd "$T/reaptmpl" && MARKDOWN_COST_RATCHET="$TR5" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc  "T5 removing it exits 0 even while another document grows" 0 "$RUN_RC"
+has "T5 and the tree is one file lighter" "$RUN_OUT" "1 file(s) below the baseline"
 
 echo "-- U. a unit change re-bases once, and pays for nothing"
 newrepo unitchg
