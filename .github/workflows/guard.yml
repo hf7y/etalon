@@ -81,6 +81,20 @@ on:
         required: false
         default: lib/verb.sh
         type: string
+      reconcile:
+        description: >-
+          Branch name (short form, e.g. `bashified`), fetched as
+          `origin/<name>` and passed to markdown-cost.sh --reconcile. For a
+          one-time merge of two long-diverged branches, where <name> is the
+          branch being merged in: its own already-tracked prose-bearing
+          files fold into the floor instead of pricing as new. Empty (the
+          default) runs the plain --census every other caller gets; only a
+          real merge of that branch into HEAD passes the guard's own
+          ancestor check, so this cannot be pointed at an unrelated ref to
+          buy room for prose the branch wrote itself. See hf7y/gardien#203.
+        required: false
+        default: ''
+        type: string
 
 jobs:
   prose:
@@ -106,6 +120,13 @@ jobs:
       - name: Make origin/main resolvable
         run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
 
+      # Only fetched when a caller actually names one -- most callers never
+      # set `reconcile`, and a fetch of a branch that does not exist there
+      # would fail the run for a feature they never asked for.
+      - name: Make the reconcile ref resolvable
+        if: inputs.reconcile != ''
+        run: git fetch --no-tags origin "+refs/heads/${{ inputs.reconcile }}:refs/remotes/origin/${{ inputs.reconcile }}"
+
       - name: Seed the ratchet if this repo has none
         run: |
           if [ ! -f "${{ inputs.ratchet }}" ]; then
@@ -127,8 +148,12 @@ jobs:
       # hf7y/ecosim reviewing its own port, hf7y/ecosim#73).
       - name: Prose ratchet -- the tree may not grow
         run: |
+          set -- --census
+          if [ -n "${{ inputs.reconcile }}" ]; then
+            set -- "$@" --reconcile "origin/${{ inputs.reconcile }}"
+          fi
           MARKDOWN_COST_RATCHET="$PWD/${{ inputs.ratchet }}" \
-            bash .etalon/bin/markdown-cost.sh --census
+            bash .etalon/bin/markdown-cost.sh "$@"
 
       - name: Seed the state-prose ratchet if this repo has none
         if: inputs.state_prose && hashFiles(inputs.state_prose_ratchet) == ''
