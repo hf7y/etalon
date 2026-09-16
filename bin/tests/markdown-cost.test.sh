@@ -332,13 +332,14 @@ rc  "U6 same-unit raise is still REFUSED"            1 "$RUN_RC"
 has "U7 and says so"                                 "$RUN_OUT" "REFUSED"
 
 echo "-- R. --reconcile folds an already-merged branch's own files into the floor"
-# A one-time reconciliation of two long-diverged branches merges in files that
+# A one-time reconciliation of long-diverged branches merges in files that
 # already existed, tracked, on the OTHER side -- not prose this PR wrote. Filed
-# against hf7y/gardien#203: a real merge (bashified -> main) FLAGged as adding
-# 14 files, none of them new; every one already lived on bashified for weeks.
+# against hf7y/gardien#203: a real merge (bashified -> main) FLAGged already-
+# tracked files as new; none of them were -- every one already lived on
+# bashified for weeks.
 R="$T/reconcile"; mkdir -p "$R"
 (
-  cd "$R"
+  cd "$R" || exit
   git init -q -b main .
   git config user.email t@t.invalid && git config user.name t
   printf 'echo base\n' > base.sh
@@ -348,7 +349,7 @@ R="$T/reconcile"; mkdir -p "$R"
 RUN_OUT="$(cd "$R" && MARKDOWN_COST_RATCHET="$R/.r" "$SCRIPT" --accept 2>&1)"
 has "R0 baseline seeds at zero before the merge" "$RUN_OUT" "0 prose-bearing file(s)"
 (
-  cd "$R"
+  cd "$R" || exit
   git checkout -q -b other
   mkdir -p lib
   printf '#!/usr/bin/env bash\n# a documented helper, already on other for weeks\n' > lib/helper.sh
@@ -381,7 +382,7 @@ rc  "R3b --accept never takes --reconcile" 2 "$RUN_RC"
 has "R3b and says why"                 "$RUN_OUT" "nothing to fold in"
 
 (
-  cd "$R"
+  cd "$R" || exit
   printf '# a genuinely new file this branch itself wrote\n' > lib/new.sh
   git add -A && git commit -qm "new prose, not from other"
 )

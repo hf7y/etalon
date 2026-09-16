@@ -326,13 +326,13 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
     [ -n "$mb" ] && base="$(census_ref "$mb")"
   fi
 
-  # --reconcile: a one-time reconciliation of two long-diverged branches merges
+  # --reconcile: a one-time reconciliation of long-diverged branches merges
   # in files that already existed, tracked, on the OTHER side -- not prose this
   # PR wrote. merge-base(HEAD, origin/main) alone can't see that: it walks back
   # to the last shared ancestor, which by definition predates either side's own
   # growth. Filed against hf7y/gardien#203, where exactly this FLAGged a real
-  # merge as "adding 14 files", none of them new -- every one already lived on
-  # the branch being merged in, for weeks, under its own commits.
+  # merge as adding already-tracked files, none of them new -- every one
+  # already lived on the branch being merged in, under its own commits.
   #
   # <ref> must be a genuine ancestor of HEAD -- ITS FILES ARE ALREADY PART OF
   # THIS TREE, reachable through real history, not an assertion pointed at an
