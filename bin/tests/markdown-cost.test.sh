@@ -325,6 +325,27 @@ has "U5a it names the routine, not just the deficit"         "$RUN_OUT" "RUN /re
 has "U5b and asks for a file, not a line count"              "$RUN_OUT" "Delete 1 file(s) this estate no longer references"
 has "U5c and points at what nothing reads"                   "$RUN_OUT" "Shaving a comment in a file that survives moves"
 
+echo "-- C. the directive names CANDIDATES, not just a quantity (#48)"
+# A number invites the minimum: three PRs in one session on hf7y/realisateur
+# paid this bill the cheapest way available -- twice by deleting the comment
+# just written, once with a .tsv this tool prices at zero.
+printf '#!/usr/bin/env bash\n# a big doc nothing else names\n# line two\n# line three\necho x\n' > "$T/unitchg/orphan.sh"
+printf '#!/usr/bin/env bash\n# a suite, discovered by a glob and named by nothing\n# line two\necho x\n' > "$T/unitchg/lib/thing.test.sh"
+printf 'orphan.sh is not mentioned here; lib/named.sh is\n' > "$T/unitchg/README.md"
+printf '#!/usr/bin/env bash\n# a named file\necho x\n' > "$T/unitchg/lib/named.sh"
+G "$T/unitchg" add -A; G "$T/unitchg" commit -qm "candidates fixture"
+RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --census 2>&1)"
+has   "C1 the directive prints where to look, not only how many"  "$RUN_OUT" "WHERE TO LOOK"
+has   "C2 a file nothing names is surfaced by path"               "$RUN_OUT" "orphan.sh"
+has   "C3 ...and is marked as unnamed, which is the ranking key"  "$RUN_OUT" "NOTHING NAMES IT"
+# THE ONE THAT MATTERS. The first draft ranked eight test suites at the top,
+# because a runner finds them by glob so NOTHING NAMES THEM is structurally
+# true of every suite. An agent paying the bill from that list deletes the
+# estate's tests -- the same cheapest-token failure, with worse blast radius.
+hasnt "C4 a suite a glob discovers is NEVER a candidate"          "$RUN_OUT" "thing.test.sh"
+has   "C5 the list says it is candidates, not a verdict"          "$RUN_OUT" "CANDIDATE, not a verdict"
+has   "C6 ...and names the failure it exists to prevent"          "$RUN_OUT" "removing the comment"
+
 echo "-- U(accept). --accept still refuses to raise WITHIN a unit"
 printf '# markdown-cost.ratchet\n# unit: 4\n# accepted whenever\n1\n' > "$T/unitchg/.r"
 RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --accept 2>&1)"; RUN_RC=$?
