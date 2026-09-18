@@ -244,6 +244,49 @@ census_stream() {
 
 census() { git ls-files -z | census_stream; }
 
+# THE OTHER HALF OF THE MEASUREMENT, and the one the unit change lost sight of.
+# A branch can delete a whole mechanism and pay NOTHING against the file count,
+# because the files it removed carried no comments -- while the one file it adds
+# does. That is the guard telling an author their reap was worth nothing, and
+# hf7y/etalon#48 carries the case that forced this.
+line_stream() { # NUL-separated paths -> total prose LINES across them
+  local f lang n=0
+  while IFS= read -r -d '' f; do
+    [ -L "$f" ] && continue
+    [ -f "$f" ] || continue
+    prose_excluded "$f" && continue
+    lang="$(prose_lang "$f")"
+    [ -n "$lang" ] || continue
+    n=$((n + $(count_prose "$lang" "$f")))
+  done
+  printf '%d' "$n"
+}
+
+line_census() { git ls-files -z | line_stream; }
+
+line_census_ref() { # <ref> -> total prose lines in that tree, or empty if unreadable
+  local d out=''
+  d="$(mktemp -d)" || return 1
+  if git archive --format=tar "$1" 2>/dev/null | tar -x -C "$d" 2>/dev/null; then
+    out="$( cd "$d" && find . -type f -print0 | line_stream )"
+  fi
+  rm -rf "$d"
+  printf '%s' "$out"
+}
+
+# A REAP PAYS FOR A FILE. Not a shave: the deleted lines must outnumber the
+# added ones across the whole tree, which a comment trimmed off one surviving
+# file cannot do. The file count still has to come down eventually -- this
+# forgives a DEFICIT, it never lowers the floor.
+lines_paid() { # <mb-ref> -> 0 if this branch removes more prose lines than it adds
+  local before after
+  before="$(line_census_ref "$1")"
+  after="$(line_census)"
+  [ -n "$before" ] && [ -n "$after" ] || return 1
+  [ "$after" -lt "$before" ] || return 1
+  printf '%s %s' "$before" "$after"
+}
+
 census_ref() { # <ref> -> prose-bearing files in that tree, or empty if unreadable
   local d out=''
   d="$(mktemp -d)" || return 1
@@ -383,12 +426,20 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
     fi
     printf '  merge base holds %s in unit %s; this branch is %+d against it.\n' "$base" "$MEASURE_UNIT" "$((now - base))"
     if [ "$now" -gt "$base" ]; then
-      printf '  FLAG [prose-ratchet] this branch adds %d prose-bearing file(s).\n' "$((now - base))"
-      printf '        (The unit changed since %s was written, so that number is not the\n' "$RATCHET"
-      printf '        floor here -- the merge-base tree is. Re-basing does not pay for\n'
-      printf '        prose this branch adds.)\n'
-      reap_directive "$((now - base))"
-      exit 1
+      if paid="$(lines_paid "$mb")"; then
+        pb="${paid%% *}"; pa="${paid##* }"
+        printf '  PAID [prose-ratchet] this branch adds %d prose-bearing file(s), and removes\n' "$((now - base))"
+        printf '        %d prose line(s): %s -> %s across the tree. A reap pays for a file.\n' "$(( pb - pa ))" "$pb" "$pa"
+        printf '        The file count still has to come down; this forgives the deficit,\n'
+        printf '        it does not lower the floor.\n'
+      else
+        printf '  FLAG [prose-ratchet] this branch adds %d prose-bearing file(s).\n' "$((now - base))"
+        printf '        (The unit changed since %s was written, so that number is not the\n' "$RATCHET"
+        printf '        floor here -- the merge-base tree is. Re-basing does not pay for\n'
+        printf '        prose this branch adds.)\n'
+        reap_directive "$((now - base))"
+        exit 1
+      fi
     fi
     printf '  ok -- adds nothing over the merge base. Run --accept to re-base %s to unit %s.\n' "$RATCHET" "$MEASURE_UNIT"
     exit 0
@@ -402,12 +453,20 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
     fi
     printf '  merge base holds %s; this branch is %+d against it.\n' "$base" "$((now - base))"
     if [ "$now" -gt "$base" ]; then
-      printf '  FLAG [prose-ratchet] this branch adds %d prose-bearing file(s), and the tree is\n' "$((now - base))"
-      printf '        already %d over the baseline of %s.\n' "$((now - was))" "$was"
-      printf '        The ratchet only falls, and raising %s is\n' "$RATCHET"
-      printf '        rejected too.\n'
-      reap_directive "$((now - base))"
-      exit 1
+      if paid="$(lines_paid "$mb")"; then
+        pb="${paid%% *}"; pa="${paid##* }"
+        printf '  PAID [prose-ratchet] this branch adds %d prose-bearing file(s), and removes\n' "$((now - base))"
+        printf '        %d prose line(s): %s -> %s across the tree. A reap pays for a file.\n' "$(( pb - pa ))" "$pb" "$pa"
+        printf '        The file count still has to come down; this forgives the deficit,\n'
+        printf '        it does not lower the floor.\n'
+      else
+        printf '  FLAG [prose-ratchet] this branch adds %d prose-bearing file(s), and the tree is\n' "$((now - base))"
+        printf '        already %d over the baseline of %s.\n' "$((now - was))" "$was"
+        printf '        The ratchet only falls, and raising %s is\n' "$RATCHET"
+        printf '        rejected too.\n'
+        reap_directive "$((now - base))"
+        exit 1
+      fi
     fi
     printf '  over the baseline, but not by this branch -- main drifted. Not this PR to answer for.\n'
   fi

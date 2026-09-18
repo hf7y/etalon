@@ -346,6 +346,39 @@ hasnt "C4 a suite a glob discovers is NEVER a candidate"          "$RUN_OUT" "th
 has   "C5 the list says it is candidates, not a verdict"          "$RUN_OUT" "CANDIDATE, not a verdict"
 has   "C6 ...and names the failure it exists to prevent"          "$RUN_OUT" "removing the comment"
 
+echo "-- L. a REAP pays for a file; a shave does not (#48 part 3)"
+# The file unit lost sight of the thing it was built for. Measured on
+# hf7y/realisateur: reaping repose -- the verb, its suite, its actuator, its
+# driver bookkeeping -- paid NOTHING, because none of those files carried
+# comments. The guard told an author their reap was worth nothing, which is how
+# a tree keeps prose nobody reads. hf7y/etalon#48 carries the measurement.
+newrepo lines
+printf '#!/usr/bin/env bash\n%s\necho x\n' "$(for i in $(seq 1 40); do printf '# stale line %s\n' "$i"; done)" > "$T/lines/fat.sh"
+G "$T/lines" add -A; G "$T/lines" commit -qm "a file carrying forty lines of prose"
+G "$T/lines" update-ref refs/remotes/origin/main main
+printf '# markdown-cost.ratchet\n# unit: 4\n# accepted whenever\n2\n' > "$T/lines/.r"
+G "$T/lines" checkout -qb reap
+# add a documented file AND reap the fat one's prose: the tree loses lines
+printf '#!/usr/bin/env bash\n# a new file, documented\n# second line of prose\necho y\n' > "$T/lines/new.sh"
+printf '#!/usr/bin/env bash\n# one line kept\necho x\n' > "$T/lines/fat.sh"
+G "$T/lines" add -A; G "$T/lines" commit -qm "reap the fat file, add a documented one"
+RUN_OUT="$(cd "$T/lines" && MARKDOWN_COST_RATCHET="$T/lines/.r" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc    "L1 a branch that reaps more prose than it adds is not refused" 0 "$RUN_RC"
+has   "L2 ...and it says the reap is what paid"            "$RUN_OUT" "A reap pays for a file"
+has   "L3 ...naming the lines removed, not just the files" "$RUN_OUT" "prose line(s)"
+has   "L4 the floor is explicitly NOT lowered by it"       "$RUN_OUT" "does not lower the floor"
+
+# ...but a SHAVE cannot pay: trimming a comment off one surviving file while
+# adding a documented one leaves the tree with more prose, not less.
+G "$T/lines" checkout -q main; G "$T/lines" checkout -qb shave
+printf '# markdown-cost.ratchet\n# unit: 4\n# accepted whenever\n2\n' > "$T/lines/.r"
+printf '#!/usr/bin/env bash\n# another new file\n# with two lines of prose\necho y\n' > "$T/lines/new2.sh"
+printf '#!/usr/bin/env bash\n%s\necho x\n' "$(for i in $(seq 1 39); do printf '# stale line %s\n' "$i"; done)" > "$T/lines/fat.sh"
+G "$T/lines" add -A; G "$T/lines" commit -qm "shave one line, add a file"
+RUN_OUT="$(cd "$T/lines" && MARKDOWN_COST_RATCHET="$T/lines/.r" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc    "L5 shaving one line off a survivor does NOT pay for a file" 1 "$RUN_RC"
+has   "L6 ...and the reap directive is what it gets"               "$RUN_OUT" "RUN /reap"
+
 echo "-- U(accept). --accept still refuses to raise WITHIN a unit"
 printf '# markdown-cost.ratchet\n# unit: 4\n# accepted whenever\n1\n' > "$T/unitchg/.r"
 RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --accept 2>&1)"; RUN_RC=$?
