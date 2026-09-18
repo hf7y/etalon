@@ -246,12 +246,9 @@ census() { git ls-files -z | census_stream; }
 
 # THE OTHER HALF OF THE MEASUREMENT, and the one the unit change lost sight of.
 # A branch can delete a whole mechanism and pay NOTHING against the file count,
-# because the files it removed carried no comments. Measured on hf7y/realisateur:
-# reaping repose -- the verb, its suite, its resume actuator, its driver
-# bookkeeping and its page branch -- removed 637 lines against 167 added, and
-# the file census still billed the branch one file, because only the file it
-# ADDED happened to carry prose. That is the guard telling an author their reap
-# was worth nothing (hf7y/etalon#48).
+# because the files it removed carried no comments -- while the one file it adds
+# does. That is the guard telling an author their reap was worth nothing, and
+# hf7y/etalon#48 carries the case that forced this.
 line_stream() { # NUL-separated paths -> total prose LINES across them
   local f lang n=0
   while IFS= read -r -d '' f; do
@@ -430,9 +427,9 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
     printf '  merge base holds %s in unit %s; this branch is %+d against it.\n' "$base" "$MEASURE_UNIT" "$((now - base))"
     if [ "$now" -gt "$base" ]; then
       if paid="$(lines_paid "$mb")"; then
-        set -- $paid
+        pb="${paid%% *}"; pa="${paid##* }"
         printf '  PAID [prose-ratchet] this branch adds %d prose-bearing file(s), and removes\n' "$((now - base))"
-        printf '        %d prose line(s): %s -> %s across the tree. A reap pays for a file.\n' "$(( $1 - $2 ))" "$1" "$2"
+        printf '        %d prose line(s): %s -> %s across the tree. A reap pays for a file.\n' "$(( pb - pa ))" "$pb" "$pa"
         printf '        The file count still has to come down; this forgives the deficit,\n'
         printf '        it does not lower the floor.\n'
       else
@@ -457,9 +454,9 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
     printf '  merge base holds %s; this branch is %+d against it.\n' "$base" "$((now - base))"
     if [ "$now" -gt "$base" ]; then
       if paid="$(lines_paid "$mb")"; then
-        set -- $paid
+        pb="${paid%% *}"; pa="${paid##* }"
         printf '  PAID [prose-ratchet] this branch adds %d prose-bearing file(s), and removes\n' "$((now - base))"
-        printf '        %d prose line(s): %s -> %s across the tree. A reap pays for a file.\n' "$(( $1 - $2 ))" "$1" "$2"
+        printf '        %d prose line(s): %s -> %s across the tree. A reap pays for a file.\n' "$(( pb - pa ))" "$pb" "$pa"
         printf '        The file count still has to come down; this forgives the deficit,\n'
         printf '        it does not lower the floor.\n'
       else
