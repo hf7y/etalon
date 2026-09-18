@@ -142,16 +142,75 @@ RATCHET="${MARKDOWN_COST_RATCHET:-$(dirname "${BASH_SOURCE[0]}")/markdown-cost.r
 # The evidence this was reversed on is in hf7y/realisateur#1142.
 MEASURE_UNIT=4
 
+CANDIDATES_MAX="${MARKDOWN_COST_CANDIDATES:-10}"
+
+# A NUMBER INVITES THE MINIMUM. Zach, 2026-09-18, after watching three PRs in
+# one session pay this bill the cheapest way available (hf7y/etalon#48):
+# "the problem was agents trying to shave their own prose down at the margins
+# rather than taking out the trash. what can change that behavior?"
+# Unit 4 already made shaving worthless. What it did not do is say WHICH files
+# to look at, so the author -- mid-task and optimising to land a PR -- hunts for
+# the cheapest token that clears the bill instead. Twice that was deleting the
+# comment they had just written; once it was a .tsv this tool prices at zero.
+# The census already knows every file's prose count. Ranking them by "does
+# anything name this" makes the cheapest action the right one.
+# DISCOVERED, NOT NAMED. A suite is found by a runner globbing `*.test.sh`, a
+# workflow by GitHub reading `.github/workflows/`, so NOTHING NAMES THEM is
+# structurally true of every one of them and says nothing about whether they are
+# dead. The first draft of this list ranked eight test suites at the top -- an
+# agent paying the bill from it would have deleted the estate's tests, which is
+# the same cheapest-token failure this list exists to stop, with worse blast
+# radius. Anything a glob reaches is not a candidate here.
+candidate_excluded() { # <path> -> 0 if a runner or a platform discovers it
+  case "$1" in
+    *.test.sh|*/tests/*|*/test/*)      return 0 ;;
+    .github/workflows/*|.github/*)     return 0 ;;
+    */conftest.py|*/__init__.py)       return 0 ;;
+  esac
+  return 1
+}
+
+reap_candidates() { # -> refs<TAB>prose-lines<TAB>path, worst first
+  local f lang n refs
+  git ls-files -z | while IFS= read -r -d '' f; do
+    [ -L "$f" ] && continue
+    [ -f "$f" ] || continue
+    prose_excluded "$f" && continue
+    candidate_excluded "$f" && continue
+    lang="$(prose_lang "$f")"
+    [ -n "$lang" ] || continue
+    n="$(count_prose "$lang" "$f")"
+    [ "$n" -gt 0 ] || continue
+    # Does anything else in the tree NAME it? The first question a human asks,
+    # and the one the old directive left them to answer by hand. A file nothing
+    # names is not proof of death -- a crontab on another host may call it
+    # (hf7y/realisateur#511 deleted its only outside observer that way) -- so
+    # these are CANDIDATES to look at, never a delete list to execute.
+    refs="$(git grep -l --fixed-strings -- "$(basename "$f")" 2>/dev/null | grep -vFx "$f" | wc -l | tr -d ' ')"
+    printf '%s\t%s\t%s\n' "$refs" "$n" "$f"
+  done | sort -t"$(printf '\t')" -k1,1n -k2,2nr | head -n "$CANDIDATES_MAX"
+}
+
 reap_directive() { # <deficit> -- what to do about it, not just that it happened
   # The only payment this unit accepts is a FILE that stops existing. Editing
   # one buys nothing, by construction, so there is no point telling anyone to.
   printf '        RUN /reap. Delete %d file(s) this estate no longer references.\n' "$1"
   printf '        Not lines -- files. Shaving a comment in a file that survives moves\n'
-  printf '        this number by zero. Ask what nothing reads: a script the verb build\n'
-  printf '        ships and no crontab invokes, a doctrine page for a mechanism that was\n'
-  printf '        retired, a spec for a check that no longer exists. The find that paid\n'
-  printf '        best here was 21 files whose commit message was simply "nothing in the\n'
-  printf '        verb build reads it".\n'
+  printf '        this number by zero.\n'
+  local cand; cand="$(reap_candidates)"
+  if [ -n "$cand" ]; then
+    printf '\n        WHERE TO LOOK -- prose-bearing files, fewest references first:\n'
+    printf '%s\n' "$cand" | while IFS="$(printf '\t')" read -r refs lines path; do
+      if [ "$refs" -eq 0 ]; then
+        printf '          %4s prose lines  NOTHING NAMES IT  %s\n' "$lines" "$path"
+      else
+        printf '          %4s prose lines  named by %-3s      %s\n' "$lines" "$refs" "$path"
+      fi
+    done
+    printf '        A file nothing names is a CANDIDATE, not a verdict: check what calls\n'
+    printf '        it from another host before deleting. Paying by removing the comment\n'
+    printf '        you just wrote is the failure this list exists to prevent.\n'
+  fi
 }
 
 ratchet_unit() { # <file-or-stdin-text> -> the unit a ratchet was written in
