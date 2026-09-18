@@ -144,8 +144,8 @@ MEASURE_UNIT=4
 
 CANDIDATES_MAX="${MARKDOWN_COST_CANDIDATES:-10}"
 
-# A NUMBER INVITES THE MINIMUM. Zach, 2026-09-18, after watching three PRs in
-# one session pay this bill the cheapest way available (hf7y/etalon#48):
+# A NUMBER INVITES THE MINIMUM (hf7y/etalon#48). Zach, after watching a session
+# pay this bill the cheapest way available every time:
 # "the problem was agents trying to shave their own prose down at the margins
 # rather than taking out the trash. what can change that behavior?"
 # Unit 4 already made shaving worthless. What it did not do is say WHICH files
@@ -186,7 +186,7 @@ reap_candidates() { # -> refs<TAB>prose-lines<TAB>path, worst first
     # names is not proof of death -- a crontab on another host may call it
     # (hf7y/realisateur#511 deleted its only outside observer that way) -- so
     # these are CANDIDATES to look at, never a delete list to execute.
-    refs="$(git grep -l --fixed-strings -- "$(basename "$f")" 2>/dev/null | grep -vFx "$f" | wc -l | tr -d ' ')"
+    refs="$(git grep -l --fixed-strings -- "$(basename "$f")" 2>/dev/null | grep -cvFx "$f")"
     printf '%s\t%s\t%s\n' "$refs" "$n" "$f"
   done | sort -t"$(printf '\t')" -k1,1n -k2,2nr | head -n "$CANDIDATES_MAX"
 }
