@@ -385,4 +385,63 @@ RUN_OUT="$(cd "$T/unitchg" && MARKDOWN_COST_RATCHET="$T/unitchg/.r" "$SCRIPT" --
 rc  "U6 same-unit raise is still REFUSED"            1 "$RUN_RC"
 has "U7 and says so"                                 "$RUN_OUT" "REFUSED"
 
+echo "-- R. --reconcile folds an already-merged branch's own files into the floor"
+# A one-time reconciliation of long-diverged branches merges in files that
+# already existed, tracked, on the OTHER side -- not prose this PR wrote. Filed
+# against hf7y/gardien#203: a real merge (bashified -> main) FLAGged already-
+# tracked files as new; none of them were -- every one already lived on
+# bashified for weeks.
+R="$T/reconcile"; mkdir -p "$R"
+(
+  cd "$R" || exit
+  git init -q -b main .
+  git config user.email t@t.invalid && git config user.name t
+  printf 'echo base\n' > base.sh
+  git add -A && git commit -qm base
+  git update-ref refs/remotes/origin/main HEAD
+)
+RUN_OUT="$(cd "$R" && MARKDOWN_COST_RATCHET="$R/.r" "$SCRIPT" --accept 2>&1)"
+has "R0 baseline seeds at zero before the merge" "$RUN_OUT" "0 prose-bearing file(s)"
+(
+  cd "$R" || exit
+  git checkout -q -b other
+  mkdir -p lib
+  printf '#!/usr/bin/env bash\n# a documented helper, already on other for weeks\n' > lib/helper.sh
+  git add -A && git commit -qm "helper, on other"
+
+  git checkout -q main
+  git checkout -q -b unrelated
+  printf 'echo decoy\n' > decoy.sh
+  git add -A && git commit -qm "decoy, unrelated to the merge"
+
+  git checkout -q main
+  git checkout -q -b work
+  git merge -q --no-ff other -m "reconcile other into work"
+)
+
+RUN_OUT="$(cd "$R" && MARKDOWN_COST_RATCHET="$R/.r" "$SCRIPT" --census 2>&1)"; RUN_RC=$?
+rc  "R1 without --reconcile the merge FLAGs -- helper.sh reads as new" 1 "$RUN_RC"
+has "R1 and blames the branch for it"    "$RUN_OUT" "adds 1 prose-bearing file(s)"
+
+RUN_OUT="$(cd "$R" && MARKDOWN_COST_RATCHET="$R/.r" "$SCRIPT" --census --reconcile other 2>&1)"; RUN_RC=$?
+rc  "R2 --reconcile of the actual merge parent exits 0" 0 "$RUN_RC"
+has "R2 and says the file was already there"  "$RUN_OUT" "already prose-bearing there"
+
+RUN_OUT="$(cd "$R" && MARKDOWN_COST_RATCHET="$R/.r" "$SCRIPT" --census --reconcile unrelated 2>&1)"; RUN_RC=$?
+rc  "R3 --reconcile of a ref that is NOT an ancestor is refused, not silently accepted" 2 "$RUN_RC"
+has "R3 and names the reason"          "$RUN_OUT" "not an ancestor of HEAD"
+
+RUN_OUT="$(cd "$R" && MARKDOWN_COST_RATCHET="$R/.r" "$SCRIPT" --accept --reconcile other 2>&1)"; RUN_RC=$?
+rc  "R3b --accept never takes --reconcile" 2 "$RUN_RC"
+has "R3b and says why"                 "$RUN_OUT" "nothing to fold in"
+
+(
+  cd "$R" || exit
+  printf '# a genuinely new file this branch itself wrote\n' > lib/new.sh
+  git add -A && git commit -qm "new prose, not from other"
+)
+RUN_OUT="$(cd "$R" && MARKDOWN_COST_RATCHET="$R/.r" "$SCRIPT" --census --reconcile other 2>&1)"; RUN_RC=$?
+rc  "R4 --reconcile still charges a file this branch adds on its own" 1 "$RUN_RC"
+has "R4 and does not fold it in for free" "$RUN_OUT" "adds 1 prose-bearing file(s)"
+
 summary

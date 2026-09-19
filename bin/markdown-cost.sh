@@ -22,10 +22,19 @@ CLI_NAME='markdown-cost.sh'
 CLI_SUMMARY='how many files in this tree carry prose, and is that more than the merge base?'
 CLI_USAGE='  markdown-cost.sh --census   count prose-bearing FILES in the TREE against bin/markdown-cost.ratchet
   markdown-cost.sh --accept   record the current tree count as the baseline
+  markdown-cost.sh --census --reconcile <ref>
+                              fold <ref>'"'"'s own prose-bearing files into the
+                              floor -- <ref> MUST be a real ancestor of HEAD (an
+                              actual merge, not an assertion). For a one-time
+                              reconciliation of two long-diverged branches,
+                              where <ref> is the branch merged in and its files
+                              already existed, tracked, before this PR. Still
+                              charges any file this branch adds that <ref> did
+                              not already carry. --accept never takes it.
   markdown-cost.sh --count-docstrings <file.py>
                               print the docstring prose lines in one file, so
                               the heuristic can be checked against Python ast'
-CLI_FLAGS='--census --accept --count-docstrings'
+CLI_FLAGS='--census --accept --count-docstrings --reconcile'
 CLI_EXITS='  0  the tree was counted and it is at or under the merge base
   1  the tree rose above the prose ratchet
   2  the tree could not be counted or a file could not be classified --
@@ -220,12 +229,16 @@ ratchet_unit() { # <file-or-stdin-text> -> the unit a ratchet was written in
 }
 
 # census_stream reads NUL-separated repo-relative paths and counts how many of
-# them carry prose at all.
+# them carry prose at all -- or, with --paths, prints WHICH ones, one per line
+# (only --reconcile's union-of-filesets needs names; every other caller keeps
+# the count). Same walk either way, so the two modes cannot disagree about
+# what a file is.
 # Every caller must hand it the same file set for a given tree, or a working
 # tree and a ref stop being comparable. NOT a second checkout -- creating one is
 # a violation bin/no-worktree-lint.sh exists to catch, and it caught this.
 census_stream() {
-  local f lang n=0
+  local f lang n=0 paths=0
+  [ "${1:-}" = --paths ] && paths=1
   while IFS= read -r -d '' f; do
     f="${f#./}"
     [ -L "$f" ] && continue
@@ -237,9 +250,11 @@ census_stream() {
     # not; how much it carries is not what this ratchet is for. Shaving a
     # comment inside a file that survives moves this number by zero, which is
     # the whole point -- see reap_directive.
-    if [ "$(count_prose "$lang" "$f")" -gt 0 ]; then n=$((n + 1)); fi
+    if [ "$(count_prose "$lang" "$f")" -gt 0 ]; then
+      if [ "$paths" = 1 ]; then printf '%s\n' "$f"; else n=$((n + 1)); fi
+    fi
   done
-  printf '%d' "$n"
+  [ "$paths" = 1 ] || printf '%d' "$n"
 }
 
 census() { git ls-files -z | census_stream; }
@@ -297,6 +312,15 @@ census_ref() { # <ref> -> prose-bearing files in that tree, or empty if unreadab
   printf '%s' "$out"
 }
 
+census_fileset_ref() { # <ref> -> newline list of prose-bearing paths in that tree
+  local d
+  d="$(mktemp -d)" || return 1
+  if git archive --format=tar "$1" 2>/dev/null | tar -x -C "$d" 2>/dev/null; then
+    ( cd "$d" && find . -type f -print0 | census_stream --paths )
+  fi
+  rm -rf "$d"
+}
+
 count_prose() { # <lang> <path> -> prose line count for one file
   if [ "$1" = m ]; then
     # Everything outside a ``` fence. The fence lines themselves are not prose.
@@ -322,7 +346,16 @@ if [ "${1:-}" = --count-docstrings ]; then
   exit 0
 fi
 
+RECON_REF=''
+_prev_arg=''
+for _a in "$@"; do
+  [ "$_prev_arg" = --reconcile ] && RECON_REF="$_a"
+  _prev_arg="$_a"
+done
+[ "$_prev_arg" = --reconcile ] && die2 "--reconcile takes a ref argument"
+
 if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
+  [ "${1:-}" = --accept ] && [ -n "$RECON_REF" ] && die2 "--reconcile only applies to --census -- --accept prices the tree itself, nothing to fold in"
   git rev-parse --git-dir >/dev/null 2>&1 || die2 "not inside a git repository"
   now="$(census)"
   [ -n "$now" ] || die2 "the census produced no count -- refusing to report a number I did not measure"
@@ -393,6 +426,34 @@ if [ "${1:-}" = --census ] || [ "${1:-}" = --accept ]; then
   if git rev-parse --verify -q origin/main >/dev/null 2>&1; then
     mb="$(git merge-base HEAD origin/main 2>/dev/null)" || mb=''
     [ -n "$mb" ] && base="$(census_ref "$mb")"
+  fi
+
+  # --reconcile: a one-time reconciliation of long-diverged branches merges
+  # in files that already existed, tracked, on the OTHER side -- not prose this
+  # PR wrote. merge-base(HEAD, origin/main) alone can't see that: it walks back
+  # to the last shared ancestor, which by definition predates either side's own
+  # growth. Filed against hf7y/gardien#203, where exactly this FLAGged a real
+  # merge as adding already-tracked files, none of them new -- every one
+  # already lived on the branch being merged in, under its own commits.
+  #
+  # <ref> must be a genuine ancestor of HEAD -- ITS FILES ARE ALREADY PART OF
+  # THIS TREE, reachable through real history, not an assertion pointed at an
+  # arbitrary ref. That does not make this a general override: only a file
+  # <ref> ALREADY carried prose in is folded into the floor, so a file this
+  # branch adds on its own -- one <ref> never had -- still charges in full.
+  if [ -n "$RECON_REF" ]; then
+    recon_sha="$(git rev-parse --verify -q "$RECON_REF" 2>/dev/null)" || \
+      die2 "--reconcile ref '$RECON_REF' does not resolve"
+    git merge-base --is-ancestor "$recon_sha" HEAD 2>/dev/null || \
+      die2 "--reconcile '$RECON_REF' ($recon_sha) is not an ancestor of HEAD -- it must be an actual merge of that ref, not an assertion"
+    recon_files="$(census_fileset_ref "$recon_sha")"
+    base_files=''
+    [ -n "$mb" ] && base_files="$(census_fileset_ref "$mb")"
+    recon_new="$(printf '%s\n' "$recon_files" | sed '/^$/d' | sort -u)"
+    union_count="$(printf '%s\n%s\n' "$base_files" "$recon_new" | sed '/^$/d' | sort -u | wc -l | tr -d ' ')"
+    recon_count="$(printf '%s\n' "$recon_new" | sed '/^$/d' | wc -l | tr -d ' ')"
+    printf '  --reconcile %s: %s file(s) already prose-bearing there, folded into the floor.\n' "$RECON_REF" "$recon_count"
+    base="$union_count"
   fi
 
   # THE BASELINE ITSELF ONLY FALLS. Raising it by hand was an affordance this
